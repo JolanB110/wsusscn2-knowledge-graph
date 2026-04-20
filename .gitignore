@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Data files — ne jamais pousser la bibliothèque wsusscn2
+*.cab
+*.xml
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -73,6 +73,15 @@ pip install lxml neo4j
 
 ---
 
+## Configuration
+Before running any script, set the `WSUS_DIR` environment variable to your local wsusscn2 extraction path:
+
+**Windows:**
+set WSUS_DIR=C:\path\to\wsusscn2
+
+**Linux/macOS:**
+export WSUS_DIR=/path/to/wsusscn2
+
 ## Tech Stack
 
 - **Python 3.11** — data extraction and preprocessing (`lxml`, `neo4j` driver)

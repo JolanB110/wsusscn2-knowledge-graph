@@ -3,8 +3,8 @@ import os
 from lxml import etree
 
 NS = "http://schemas.microsoft.com/msus/2004/02/OfflineSync"
-PACKAGE_XML = r"C:\Users\user\Documents\Stage 2026\wsusscn2\package.xml"
-WSUS_DIR = r"C:\Users\user\Documents\Stage 2026\wsusscn2"
+WSUS_DIR = os.environ["WSUS_DIR"]
+PACKAGE_XML = os.path.join(WSUS_DIR, "package.xml")
 
 def parse_update(update):
     prerequisites = update.find(f"{{{NS}}}Prerequisites")

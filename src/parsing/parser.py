@@ -148,7 +148,7 @@ import time
 
 test_lengths = [10, 100, 1000, 10000]
 
-os.makedirs("Test_output", exist_ok=True)
+os.makedirs("data/output", exist_ok=True)
 
 for i in test_lengths:
     results = []
@@ -160,18 +160,7 @@ for i in test_lengths:
     end = time.time()
     duration = end - start
 
-    with open(f"Test_output/output_sample_{i}.json", "w") as f:
+    with open(f"data/output/output_sample_{i}.json", "w") as f:
         json.dump(results, f, indent=2)
 
     print(f"{i} updates : {duration:.2f}s")
-    
-"""
-results :
-
-10 updates → 0.00s
-100 updates → 0.12s
-1000 updates → 1.08s
-10000 updates → 9.19s
-
-Full dataset (~136k updates) would takes ~2–6 minutes depending on system load
-"""

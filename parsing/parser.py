@@ -128,6 +128,8 @@ root = tree.getroot()
 updates_node = root.find(f"{{{NS}}}Updates")
 updates = updates_node.findall(f"{{{NS}}}Update")
 
+# This is a test on the 5 first updates to check if the full data is correctly built, you can remove the comment to execute it
+"""
 print(f"Nombre d'updates : {len(updates)}")
 # We build the full update data for the first 5 updates to validate the approach
 for u in updates[:5]:
@@ -136,4 +138,40 @@ for u in updates[:5]:
     print(f"Title    : {result.get('title')}")
     print(f"Severity : {result.get('severity')}")
     print(f"KB       : {result.get('kb_article_id')}")
+"""
 
+# The output will be a JSON file containing the full data for all the updates
+# with 5 different lengths of test : 10, 100, 1000, 10.000 (We will try all of the Update later)
+# and we will check the execution time for each of them to see how it scales with the number of updates.
+
+import time
+
+test_lengths = [10, 100, 1000, 10000]
+
+os.makedirs("Test_output", exist_ok=True)
+
+for i in test_lengths:
+    results = []
+    start = time.time()
+
+    for u in updates[:i]:
+        results.append(build_full_update(u))
+
+    end = time.time()
+    duration = end - start
+
+    with open(f"Test_output/output_sample_{i}.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    print(f"{i} updates : {duration:.2f}s")
+    
+"""
+results :
+
+10 updates → 0.00s
+100 updates → 0.12s
+1000 updates → 1.08s
+10000 updates → 9.19s
+
+Full dataset (~136k updates) would takes ~2–6 minutes depending on system load
+"""

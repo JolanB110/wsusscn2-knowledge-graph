@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import os
 import json
+import time
 from lxml import etree
 
 """This script parses the package.xml file and the corresponding x and l files to extract
@@ -144,9 +145,7 @@ for u in updates[:5]:
 # with 5 different lengths of test : 10, 100, 1000, 10.000 (We will try all of the Update later)
 # and we will check the execution time for each of them to see how it scales with the number of updates.
 
-import time
-
-test_lengths = [10, 100, 1000, 10000]
+test_lengths = [10, 100, 1000, 10000, 100000, len(updates)]
 
 os.makedirs("data/output", exist_ok=True)
 
@@ -160,6 +159,7 @@ for i in test_lengths:
     end = time.time()
     duration = end - start
 
+    # Output is done in data/output, the JSON's files aren't commited to the repo and can ba created using this script
     with open(f"data/output/output_sample_{i}.json", "w") as f:
         json.dump(results, f, indent=2)
 

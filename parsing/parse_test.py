@@ -21,12 +21,14 @@ PACKAGE_XML = os.path.join(WSUS_DIR, "package.xml")
 def parse_update(update):
     prerequisites = update.find(f"{{{NS}}}Prerequisites")
     prereq_ids = []
+
     # We extract the UpdateId of each prerequisite if they exist, otherwise we return an empty list
     if prerequisites is not None:
         prereq_ids = [uid.get('Id') for uid in prerequisites.findall(f"{{{NS}}}UpdateId")]
 
     categories = update.find(f"{{{NS}}}Categories")
     cats = []
+
     # Same thing for categories, we extract the Type and Id of each category if they exist, otherwise we return an empty list
     if categories is not None:
         cats = [{"type": cat.get('Type'), "id": cat.get('Id')} for cat in categories.findall(f"{{{NS}}}Category")]
@@ -79,6 +81,8 @@ def get_title(revision_id):
                 return title.text if title is not None else None
     return None
 
+
+
 # Principal function that builds the full update data by combining the information using the previous functions
 def build_full_update(update):
     data = parse_update(update)
@@ -86,6 +90,8 @@ def build_full_update(update):
     data.update(get_x_data(revision_id))
     data["title"] = get_title(revision_id)
     return data
+
+
 
 # Principal execution of the script, we parse the package.xml file and extract all the updates
 tree = ET.parse(PACKAGE_XML)

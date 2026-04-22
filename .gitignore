@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .env
 test.py
+test[0-9].py
 
 # Data files — ne jamais pousser la bibliothèque wsusscn2
 *.cab

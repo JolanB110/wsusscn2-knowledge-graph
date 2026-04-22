@@ -163,4 +163,8 @@ for i in test_lengths:
     with open(f"data/output/output_sample_{i}.json", "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"{i} updates : {duration:.2f}s")
+    if duration > 60:
+        mins = duration / 60
+        print(f"{i} updates : {mins:.2f} min, {duration - mins * 60:.2f}s")
+    else:
+        print(f"{i} updates : {duration:.2f}s")

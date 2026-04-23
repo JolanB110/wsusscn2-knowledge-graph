@@ -19,3 +19,6 @@ Thumbs.db
 
 # Generated index files
 *.json
+
+# Generated text files
+test.txt

@@ -69,7 +69,7 @@ pip install lxml neo4j
 ```
 
 > The `wsusscn2.cab` file is not included in this repository.  
-> Download it from Microsoft's servers and extract it into a local directory.
+> Download it from Microsoft's servers and extract it into a local directory with this link : (iwr https://wsusscn2.cab -OutFile wsusscn2.cab) or (curl.exe -L https://wsusscn2.cab -o wsusscn2.cab)
 
 ---
 
@@ -94,7 +94,7 @@ export WSUS_DIR=/path/to/wsusscn2
 
 - [x] Phase 1 — Data exploration and inventory
 - [x] Phase 2 — Python parsing pipeline (in progress)
-- [ ] Phase 3 — Graph model validation
+- [x] Phase 3 — Graph model validation (in progress)
 - [ ] Phase 4 — Graph database import
 - [ ] Phase 5 — Visualization and querying
 

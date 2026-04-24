@@ -28,12 +28,11 @@ Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
 | `/x/` | Technical metadata (KB, severity, product version) | ✅ Explored |
 | `/l/en/` | Human-readable titles and descriptions | ✅ Explored |
 | `/c/` | Complementary configuration data | ✅ Explored |
-| `/files/` | Annexe files | 🔄 Not yet explored |
-| `/e/` | EULA files | 🔄 Not yet explored |
-
+| `/e/` | EULA metadata (133 unique RevisionIds, 29-38 languages each) | ✅ Explored |
+| `/files/` | Raw EULA text files (UTF-16, SHA1 content-addressable, package2 only) | ✅ Explored |
 ---
 
-## Graph Model (V1 - in progress)
+## Graph Model (V2 - in progress)
 
 ### Nodes
 
@@ -42,9 +41,8 @@ Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
 | `Update` | package.xml | 136,271 |
 | `Product` | package.xml > Categories | 199 |
 | `ProductFamily` | package.xml > Categories | 38 |
-| `Company` | package.xml > Categories | 1 |
 | `UpdateClassification` | package.xml > Categories | 5 |
-| `KBArticle` | /x/ | — |
+| `KBArticle` | /x/ | 6893 |
 | `Severity` | /x/ | 4 values |
 
 ### Relations
@@ -52,7 +50,7 @@ Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
 | Relation | From | To | Source field |
 |---|---|---|---|
 | `DEPENDS_ON` | Update | Update | Prerequisites |
-| `BELONGS_TO` | Update | Product / ProductFamily / Company / UpdateClassification | Categories |
+| `BELONGS_TO` | Update | Product / ProductFamily / UpdateClassification | Categories |
 | `SUPERSEDED_BY` | Update | Update | SupersededBy |
 | `BUNDLED_BY` | Update | Update | BundledBy |
 | `REFERENCED_AS` | Update | KBArticle | KBArticleID |
@@ -112,7 +110,7 @@ export WSUS_DIR=/path/to/wsusscn2
 
 - **Python 3.11** — data extraction and preprocessing (`lxml`, `neo4j` driver)
 - **BaseX 12.2** — XQuery-based XML exploration
-- **Graph database** — TBD (Neo4j or equivalent)
+- **Graph database** —  Neo4j Aura
 
 ---
 
@@ -121,7 +119,7 @@ export WSUS_DIR=/path/to/wsusscn2
 - [x] Phase 1 — Data exploration and inventory
 - [x] Phase 2 — Python parsing pipeline (in progress)
 - [x] Phase 3 — Graph model validation (in progress)
-- [ ] Phase 4 — Graph database import
+- [x] Phase 4 — Graph database import (in progress)
 - [ ] Phase 5 — Visualization and querying
 
 ---

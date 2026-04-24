@@ -5,6 +5,7 @@ __pycache__/
 .env
 test.py
 test[0-9].py
+tempCodeRunnerFile.py
 
 # Data files — ne jamais pousser la bibliothèque wsusscn2
 *.cab

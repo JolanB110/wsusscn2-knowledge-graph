@@ -60,6 +60,32 @@ Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
 
 ---
 
+## Repository Structure
+
+```
+wsusscn2-knowledge-graph/
+├── .gitignore
+├── README.md
+├── requirements.txt
+├── data/
+│   └── output/
+│       └── .gitkeep
+├── docs/
+│   └── images/
+│       └── .gitkeep
+└── src/
+    ├── etl/
+    │   ├── explore_cat_names.py
+    │   └── export_csv.py
+    ├── parsing/
+    │   ├── build_index.py
+    │   └── parser.py
+    └── tools/
+        └── inspect_update.py
+```
+
+---
+
 ## Installation
 
 ```bash

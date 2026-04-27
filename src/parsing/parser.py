@@ -61,6 +61,7 @@ def parse_update(update):
         "revision_id": update.get('RevisionId'),
         "revision_number": update.get('RevisionNumber'),
         "creation_date": update.get('CreationDate'),
+        "default_language": update.get('DefaultLanguage'),
         "is_leaf": update.get('IsLeaf'),
         "is_bundle": update.get('IsBundle'),
         "deployment_action": update.get('DeploymentAction'),
@@ -86,11 +87,13 @@ def get_x_data(revision_id, index):
         props = x_root.find("ExtendedProperties")
         if props is not None:
             kb = props.find("KBArticleID")
+            languages = [lang.text for lang in props.findall("Language") if lang.text]
             return {
-                "product_name": props.get('ProductName'),
+                "product_name":    props.get('ProductName'),
                 "release_version": props.get('ReleaseVersion'),
-                "severity": props.get('MsrcSeverity'),
-                "kb_article_id": kb.text if kb is not None else None
+                "severity":        props.get('MsrcSeverity'),
+                "kb_article_id":   kb.text if kb is not None else None,
+                "languages":       languages
             }
     return {}
 
@@ -110,8 +113,22 @@ def get_title(revision_id, index):
             content = f.read()
         l_root = etree.fromstring(b"<root>" + content + b"</root>")
         title = l_root.find(".//Title")
-        return title.text if title is not None else None
-    return None
+        description = l_root.find(".//Description")
+        more_info_url = l_root.find(".//MoreInfoUrl")
+        support_url   = l_root.find(".//SupportUrl")
+        l_base = os.path.join(WSUS_DIR, package, "l")
+        available_languages = [
+            lang for lang in os.listdir(l_base)
+            if os.path.exists(os.path.join(l_base, lang, revision_id))
+        ]
+        return {
+            "title": title.text if title is not None else None,
+            "description": description.text if description is not None else None,
+            "available_languages": sorted(available_languages),
+            "more_info_url": more_info_url.text if more_info_url is not None else None,
+            "support_url": support_url.text if support_url is not None else None
+        }
+    return {}
 
 
 
@@ -146,7 +163,9 @@ def build_full_update(update):
     data = parse_update(update)
     revision_id = data["revision_id"]
     data.update(get_x_data(revision_id, index))
-    data["title"] = get_title(revision_id, index)
+    localized = get_title(revision_id, index)
+    data["title"] = localized.get("title") if localized else None
+    data["description"] = localized.get("description") if localized else None
     data["eula"] = get_eula(revision_id, index)
     return data
 

@@ -12,7 +12,7 @@ into CSV files, which can then be imported into a graph database like Neo4j.
 
 # Add the src/parsing folder to the path to reuse ../parsing/parser.py functions
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
-from parser import parse_update, get_x_data, get_title, index, NS, WSUS_DIR, PACKAGE_XML
+from parser import parse_update, get_x_data, get_title, get_eula, index, NS, WSUS_DIR, PACKAGE_XML
 
 
 # CONFIGURATION
@@ -25,9 +25,9 @@ SAMPLE_SIZE = None          # Number of updates to export (use None for all)
 # be careful when running the script for the first time. 
 
 if SAMPLE_SIZE is not None:
-    print(f"⚠️ SAMPLE_SIZE is set to {SAMPLE_SIZE} -> only the first {SAMPLE_SIZE} updates will be exported.")
+    print(f"/!\ SAMPLE_SIZE is set to {SAMPLE_SIZE} -> only the first {SAMPLE_SIZE} updates will be exported.")
 else :
-    print("⚠️ SAMPLE_SIZE is set to None -> all updates will be exported (this may take a while).")
+    print("/!\ SAMPLE_SIZE is set to None -> all updates will be exported (this may take a while).")
     print("Press Ctrl+C to abort")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -53,20 +53,24 @@ if SAMPLE_SIZE is not None:
 print(f"Exporting {len(updates)} updates to CSV...")
 
 # Preparation of lists of rows for each CSV
-updates_rows       = []
-depends_on_rows    = []
-bundled_by_rows    = []
+updates_rows = []
+depends_on_rows = []
+bundled_by_rows = []
 superseded_by_rows = []
-rel_belongs_to_rows     = []
-rel_part_of_rows        = []
-rel_has_severity_rows   = []
-rel_referenced_as_rows  = []
+rel_belongs_to_rows = []
+rel_part_of_rows = []
+rel_has_severity_rows = []
+rel_referenced_as_rows = []
+rel_has_eula_rows = []
+rel_in_language_rows = []
 
-products             = {}
-product_families     = {}
+products = {}
+product_families = {}
 update_classifications = {}
-kb_articles          = set()
-severities           = set()
+languages = set()
+kb_articles = set()
+severities = set()
+eula = {}
 
 
 product_to_family = {}  
@@ -91,22 +95,27 @@ for u in updates:
     data  = parse_update(u)
     rid   = data["revision_id"]
     x     = get_x_data(rid, index)
-    title = get_title(rid, index)
+    localized = get_title(rid, index)
+    title = localized.get("title") if localized else None
+    description = localized.get("description") if localized else None
 
     severity     = x.get("severity")
     kb_article   = x.get("kb_article_id")
 
     updates_rows.append({
-        "revision_id":       rid,
-        "update_id":         data["update_id"],
-        "revision_number":   data["revision_number"],
-        "creation_date":     data["creation_date"],
-        "is_leaf":           data["is_leaf"],
-        "is_bundle":         data["is_bundle"],
-        "deployment_action": data["deployment_action"],
-        "title":             title,
-        "product_name":      x.get("product_name"),
-        "release_version":   x.get("release_version"),
+        "revision_id":          rid,
+        "update_id":            data["update_id"],
+        "revision_number":      data["revision_number"],
+        "creation_date":        data["creation_date"],
+        "title":                title,
+        "description":          description,
+        "default_language":     data["default_language"],
+        "available_languages":  "|".join(localized.get("available_languages", []) if localized else []),
+        "is_leaf":              data["is_leaf"],
+        "is_bundle":            data["is_bundle"],
+        "deployment_action":    data["deployment_action"],
+        "product_name":         x.get("product_name"),
+        "release_version":      x.get("release_version"),
     })
 
     # Severity node + relation
@@ -123,6 +132,23 @@ for u in updates:
         rel_referenced_as_rows.append({
             "revision_id":  rid,
             "kb_article_id": kb_article
+        })
+
+    # EulaFile node + relation
+    eula_data = get_eula(rid, index)
+    if eula_data:
+        eula[eula_data["digest_hex"]] = eula_data
+        rel_has_eula_rows.append({
+            "revision_id": rid,
+            "digest_hex":  eula_data["digest_hex"]
+        })
+
+    # IN_LANGUAGE
+    for lang_code in x.get("languages", []):
+        languages.add(lang_code)
+        rel_in_language_rows.append({
+            "revision_id": rid,
+            "language_code": lang_code
         })
 
     # DEPENDS_ON
@@ -204,9 +230,11 @@ def write_csv(filename, rows, fieldnames):
 
 # Nodes
 write_csv("updates.csv", updates_rows, [
-    "revision_id", "update_id", "revision_number", "creation_date",
+    "revision_id", "update_id", "revision_number",
+    "creation_date",
+    "title", "description", "default_language", "available_languages",
     "is_leaf", "is_bundle", "deployment_action",
-    "title", "product_name", "release_version"
+    "product_name", "release_version"
 ])
 
 write_csv("products.csv",
@@ -234,7 +262,26 @@ write_csv("severities.csv",
     ["level"]
 )
 
+write_csv("eula_nodes.csv",
+    list(eula.values()),
+    ["digest_hex", "file_name", "digest_algorithm", "size", "language"]
+)
+
+write_csv("languages.csv",
+    [{"code": lang} for lang in sorted(languages)],
+    ["code"]
+)
+
 # Relations
+
+write_csv("rel_has_eula.csv", rel_has_eula_rows, [
+    "revision_id", "digest_hex"
+])
+
+write_csv("rel_in_language.csv", rel_in_language_rows, [
+    "revision_id", "language_code"
+])
+
 write_csv("rel_depends_on.csv", depends_on_rows, [
     "source_revision_id", "target_update_id"
 ])

@@ -12,7 +12,7 @@ into CSV files, which can then be imported into a graph database like Neo4j.
 
 # Add the src/parsing folder to the path to reuse ../parsing/parser.py functions
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
-from parser import parse_update, get_x_data, get_title, get_eula, index, NS, WSUS_DIR, PACKAGE_XML
+from parser import parse_update, get_x_data, get_title, get_c_data, get_eula, index, NS, WSUS_DIR, PACKAGE_XML
 
 
 # CONFIGURATION
@@ -96,6 +96,7 @@ for u in updates:
     rid   = data["revision_id"]
     x     = get_x_data(rid, index)
     localized = get_title(rid, index)
+    c = get_c_data(rid, index)
     title = localized.get("title") if localized else None
     description = localized.get("description") if localized else None
 
@@ -103,19 +104,29 @@ for u in updates:
     kb_article   = x.get("kb_article_id")
 
     updates_rows.append({
-        "revision_id":          rid,
-        "update_id":            data["update_id"],
-        "revision_number":      data["revision_number"],
-        "creation_date":        data["creation_date"],
-        "title":                title,
-        "description":          description,
-        "default_language":     data["default_language"],
-        "available_languages":  "|".join(localized.get("available_languages", []) if localized else []),
-        "is_leaf":              data["is_leaf"],
-        "is_bundle":            data["is_bundle"],
-        "deployment_action":    data["deployment_action"],
-        "product_name":         x.get("product_name"),
-        "release_version":      x.get("release_version"),
+        # Identifiers
+        "revision_id":             rid,
+        "update_id":               data["update_id"],
+        "revision_number":         data["revision_number"],
+        # Dates
+        "creation_date":           data["creation_date"],
+        # Localized content
+        "title":                   title,
+        "description":             description,
+        "more_info_url":           localized.get("more_info_url") if localized else None,
+        "support_url":             localized.get("support_url") if localized else None,
+        "default_language":        data["default_language"],
+        "available_languages":     "|".join(localized.get("available_languages", []) if localized else []),
+        # Flags
+        "is_leaf":                 data["is_leaf"],
+        "is_bundle":               data["is_bundle"],
+        "deployment_action":       data["deployment_action"],
+        "update_type":             c.get("update_type"),
+        "explicitly_deployable":   c.get("explicitly_deployable"),
+        "auto_select_on_websites": c.get("auto_select_on_websites"),
+        # Product info
+        "product_name":            x.get("product_name"),
+        "release_version":         x.get("release_version"),
     })
 
     # Severity node + relation
@@ -232,8 +243,10 @@ def write_csv(filename, rows, fieldnames):
 write_csv("updates.csv", updates_rows, [
     "revision_id", "update_id", "revision_number",
     "creation_date",
-    "title", "description", "default_language", "available_languages",
+    "title", "description", "more_info_url", "support_url",
+    "default_language", "available_languages",
     "is_leaf", "is_bundle", "deployment_action",
+    "update_type", "explicitly_deployable", "auto_select_on_websites",
     "product_name", "release_version"
 ])
 

@@ -132,6 +132,30 @@ def get_title(revision_id, index):
 
 
 
+def get_c_data(revision_id, index):
+    if revision_id not in index:
+        return {}
+    if not index[revision_id]["has_c"]:
+        return {}
+    
+    package = index[revision_id]["package"]
+    
+    candidate = os.path.join(WSUS_DIR, package, "c", revision_id)
+    if os.path.exists(candidate):
+        with open(candidate, 'rb') as f:
+            content = f.read()
+        c_root = etree.fromstring(b"<root>" + content + b"</root>")
+        props = c_root.find("Properties")
+        if props is not None:
+            return {
+                "update_type":             props.get('UpdateType'),
+                "explicitly_deployable":   props.get('ExplicitlyDeployable'),
+                "auto_select_on_websites": props.get('AutoSelectOnWebSites')
+            }
+    return {}
+
+
+
 def get_eula(revision_id,index):
     if revision_id not in index:
         return None
@@ -166,6 +190,7 @@ def build_full_update(update):
     localized = get_title(revision_id, index)
     data["title"] = localized.get("title") if localized else None
     data["description"] = localized.get("description") if localized else None
+    data.update(get_c_data(revision_id, index))
     data["eula"] = get_eula(revision_id, index)
     return data
 

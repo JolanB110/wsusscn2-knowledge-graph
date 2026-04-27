@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import os
 import json
 import time
+import base64
 from lxml import etree
 
 """This script parses the package.xml file and the corresponding x and l files to extract
@@ -114,12 +115,39 @@ def get_title(revision_id, index):
 
 
 
+def get_eula(revision_id,index):
+    if revision_id not in index:
+        return None
+    if not index[revision_id]["has_e"]:
+        return None
+    
+    package = index[revision_id]["package"]
+
+    candidate = os.path.join(WSUS_DIR, package, "e", "en", revision_id)
+    if os.path.exists(candidate):
+        with open(candidate, 'rb') as f:
+            content = f.read()
+        e_root = etree.fromstring(b"<root>" + content + b"</root>")
+        props = e_root.find("EulaFile")
+        digest_b64 = props.get('Digest')
+        digest_hex = base64.b64decode(digest_b64).hex().upper()
+        return {
+            "digest_hex":        digest_hex,
+            "file_name":         props.get('FileName'),
+            "digest_algorithm":  props.get('DigestAlgorithm'),
+            "size":              props.get('Size'),
+            "language":          props.get('Language')
+        }
+    return {}
+
+
 # Principal function that builds the full update data by combining the information using the previous functions
 def build_full_update(update):
     data = parse_update(update)
     revision_id = data["revision_id"]
     data.update(get_x_data(revision_id, index))
     data["title"] = get_title(revision_id, index)
+    data["eula"] = get_eula(revision_id, index)
     return data
 
 if __name__ == "__main__":
@@ -139,6 +167,7 @@ if __name__ == "__main__":
         print(f"Title    : {result.get('title')}")
         print(f"Severity : {result.get('severity')}")
         print(f"KB       : {result.get('kb_article_id')}")
+        print(f"EULA     : {result.get('eula')}")
     """
 
     # The output will be a JSON file containing the full data for all the updates

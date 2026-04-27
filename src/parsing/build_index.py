@@ -20,21 +20,29 @@ for package in os.listdir(WSUS_DIR):
     
     x_path = os.path.join(package_path, "x")
     l_path = os.path.join(package_path, "l", "en")
+    e_path = os.path.join(package_path, "e", "en")
     
     # We get the revision IDs from the x and l files names to build the index
     if os.path.exists(x_path):
         for filename in os.listdir(x_path):
             revision_id = filename
             if revision_id not in index:
-                index[revision_id] = {"package": package, "has_x": False, "has_l": False}
+                index[revision_id] = {"package": package, "has_x": False, "has_l": False, "has_e": False}
             index[revision_id]["has_x"] = True
     
     if os.path.exists(l_path):
         for filename in os.listdir(l_path):
             revision_id = filename
             if revision_id not in index:
-                index[revision_id] = {"package": package, "has_x": False, "has_l": False}
+                index[revision_id] = {"package": package, "has_x": False, "has_l": False, "has_e": False}
             index[revision_id]["has_l"] = True
+
+    if os.path.exists(e_path):
+        for filename in os.listdir(e_path):
+            revision_id = filename
+            if revision_id not in index:
+                index[revision_id] = {"package": package, "has_x": False, "has_l": False, "has_e": False}
+            index[revision_id]["has_e"] = True
 
 # We then create a JSON file to store the index
 with open("index.json", "w") as f:

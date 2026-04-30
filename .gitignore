@@ -24,3 +24,7 @@ Thumbs.db
 
 # Generated text files
 test.txt
+
+# Test Folder
+
+test/*

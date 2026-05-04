@@ -22,39 +22,22 @@ The `wsusscn2.cab` file is the Microsoft Windows Update offline scan file, publi
 
 Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
 
-| Source | Content | Status |
+| Source | Content | Patterns |
 |---|---|---|
-| `package/package.xml` | Global structure, relations, identifiers | ✅ Explored |
-| `/x/` | Technical metadata (KB, severity, product version) | ✅ Explored |
-| `/l/en/` | Human-readable titles and descriptions | ✅ Explored |
-| `/c/` | Complementary configuration data | ✅ Explored |
-| `/e/` | EULA metadata (133 unique RevisionIds, 29-38 languages each) | ✅ Explored |
-| `/files/` | Raw EULA text files (UTF-16, SHA1 content-addressable, package2 only) | ✅ Explored |
+| `package/package.xml` | Global structure, relations, identifiers | - |
+| `/x/` | Technical metadata (KB, severity, product version) | 166 |
+| `/l/en/` | Human-readable titles and descriptions | 8 |
+| `/c/` | Complementary configuration data | 1569 |
+| `/e/` | EULA metadata (133 unique RevisionIds, 29-38 languages each) | 2 |
+| `/files/` | Raw EULA text files (UTF-16, SHA1 content-addressable, package2 only) | - |
+
+Patterns represente the number of unique patterns of attributes and balies in the catalog. For example, we can have a /l/en/ files with `Language`, `Title`, `LocalizedProperties` and `Description` and another files with `Language`, `Title`, `LocalizedProperties` but no `Description`. These two files would be counted as 2 patterns.
+
 ---
 
 ## Graph Model (V2 - in progress)
 
-### Nodes
-
-| Node | Source | Instances |
-|---|---|---|
-| `Update` | package.xml | 136,271 |
-| `Product` | package.xml > Categories | 199 |
-| `ProductFamily` | package.xml > Categories | 38 |
-| `UpdateClassification` | package.xml > Categories | 5 |
-| `KBArticle` | /x/ | 6893 |
-| `Severity` | /x/ | 4 values |
-
-### Relations
-
-| Relation | From | To | Source field |
-|---|---|---|---|
-| `DEPENDS_ON` | Update | Update | Prerequisites |
-| `BELONGS_TO` | Update | Product / ProductFamily / UpdateClassification | Categories |
-| `SUPERSEDED_BY` | Update | Update | SupersededBy |
-| `BUNDLED_BY` | Update | Update | BundledBy |
-| `REFERENCED_AS` | Update | KBArticle | KBArticleID |
-| `HAS_SEVERITY` | Update | Severity | MsrcSeverity |
+![alt text](https://github.com/JolanB110/wsusscn2-knowledge-graph/docs/Model.png "Graph Model")
 
 ---
 
@@ -65,12 +48,16 @@ wsusscn2-knowledge-graph/
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
-├── data/
+├── data/ 
 │   └── output/
 │       └── .gitkeep
 ├── docs/
 │   └── images/
 │       └── .gitkeep
+│
+├── tests/
+│   └── parse_test.py
+│
 └── src/
     ├── etl/
     │   ├── explore_cat_names.py

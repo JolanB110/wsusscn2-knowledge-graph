@@ -37,7 +37,7 @@ Patterns represente the number of unique patterns of attributes and balies in th
 
 ## Graph Model (V2 - in progress)
 
-![alt text](https://github.com/JolanB110/wsusscn2-knowledge-graph/blob/main/docs/images/Model.png) "Graph Model")
+![alt text](https://github.com/JolanB110/wsusscn2-knowledge-graph/blob/main/docs/images/Model.png)
 
 ---
 

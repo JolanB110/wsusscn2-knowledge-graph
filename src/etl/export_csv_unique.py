@@ -5,25 +5,22 @@ import csv
 import sys
 
 """
-This script exports the data from package.xml and corresponding /x and /l/en files
-into a single flat CSV file, which can then be imported into a graph database like Neo4j
-for schema-free exploration (no pre-modeled nodes or relations).
+This script exports the data from package.xml and corresponding /x/, /l/en/, /c/ and /e/ files
+into a single flat CSV file for the V3 model, for schema-free exploration.
 
 Each row represents one update with all its attributes inlined.
-Multi-valued fields (prerequisites, languages, products, etc.) are pipe-separated (|).
+Multi-valued fields (prerequisites, languages, CVEs, etc.) are pipe-separated (|).
 """
 
-
-# Add the src/parsing folder to the path to reuse ../parsing/parser.py functions
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
-from parser import parse_update, get_x_data, get_title, get_c_data, get_eula, index, NS, WSUS_DIR, PACKAGE_XML
+from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data, compute_behavior_id, index, NS, WSUS_DIR, PACKAGE_XML
 
 
 # CONFIGURATION
 
-OUTPUT_DIR  = "data/csv"    # Output folder (created automatically if it doesn't exist)
+OUTPUT_DIR  = "data/csv"
 OUTPUT_FILE = "updates_flat.csv"
-SAMPLE_SIZE = 5000          # Number of updates to export (use None for all)
+SAMPLE_SIZE = 5000
 # |
 # V
 # /!\ SAMPLE_SIZE will be huge if you set it to None,
@@ -39,7 +36,6 @@ else:
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Load category registry built by explore_cat_names.py
 if not os.path.exists("category_registry.json"):
     print("category_registry.json not found -> run explore_cat_names.py first")
     sys.exit(1)
@@ -47,13 +43,11 @@ if not os.path.exists("category_registry.json"):
 with open("category_registry.json", encoding="utf-8") as f:
     category_registry = json.load(f)
 
-# Parse package.xml
 tree = ET.parse(PACKAGE_XML)
 root = tree.getroot()
 updates_node = root.find(f"{{{NS}}}Updates")
 updates = updates_node.findall(f"{{{NS}}}Update")
 
-# Apply sample size
 if SAMPLE_SIZE is not None:
     updates = updates[:SAMPLE_SIZE]
 
@@ -62,115 +56,113 @@ print(f"Exporting {len(updates)} updates to {OUTPUT_FILE}...")
 rows = []
 
 for u in updates:
-    data     = parse_update(u)
-    rid      = data["revision_id"]
-    x        = get_x_data(rid, index)
-    localized = get_title(rid, index)
-    c        = get_c_data(rid, index)
-    eula_data = get_eula(rid, index)
+    data      = parse_update(u)
+    rid       = data["revision_id"]
+    x         = get_x_data(rid)
+    l         = get_l_data(rid)
+    c         = get_c_data(rid)
+    eula_list = get_e_data(rid)
 
-    title       = localized.get("title")       if localized else None
-    description = localized.get("description") if localized else None
+    # Categories — inlined as pipe-separated values
+    update_cats = {cat["type"]: cat for cat in data.get("categories", [])}
+    def _name(cat):
+        return category_registry.get(cat["id"], {}).get("name") if cat else None
+    def _id(cat):
+        return cat["id"] if cat else None
 
-    # Collect category info per type, inlined as pipe-separated IDs and names
-    product_ids        = []
-    product_names      = []
-    family_ids         = []
-    family_names       = []
-    classif_ids        = []
-    classif_names      = []
+    company_cat = update_cats.get("Company")
+    family_cat  = update_cats.get("ProductFamily")
+    product_cat = update_cats.get("Product")
+    classif_cat = update_cats.get("UpdateClassification")
 
-    cats_node = u.find(f"{{{NS}}}Categories")
-    if cats_node is not None:
-        for cat in cats_node.findall(f"{{{NS}}}Category"):
-            cat_type = cat.get("Type")
-            cat_id   = cat.get("Id")
-            if not cat_id or cat_type == "Company":
-                continue
-            name = category_registry.get(cat_id, {}).get("name")
-            if cat_type == "Product":
-                product_ids.append(cat_id)
-                product_names.append(name or "")
-            elif cat_type == "ProductFamily":
-                family_ids.append(cat_id)
-                family_names.append(name or "")
-            elif cat_type == "UpdateClassification":
-                classif_ids.append(cat_id)
-                classif_names.append(name or "")
+    # UpdateBehavior key
+    permanence  = c.get("permanence")
+    self_update = c.get("self_update")
+    behavior_id = compute_behavior_id(
+        x.get("handler"), x.get("reboot_behavior"), x.get("can_request_user_input"),
+        x.get("impact"), x.get("requires_network_connectivity"), x.get("patching_type"),
+        x.get("reboot_behavior_uninstall"), permanence, self_update
+    )
 
-    # Collect bundled_by IDs
-    bundled_by_ids = []
-    bundled_by = u.find(f"{{{NS}}}BundledBy")
-    if bundled_by is not None:
-        bundled_by_ids = [ref.get("Id") for ref in bundled_by.findall(f"{{{NS}}}Revision")]
-
-    # Collect superseded_by IDs
-    superseded_by_ids = []
-    superseded_by = u.find(f"{{{NS}}}SupersededBy")
-    if superseded_by is not None:
-        superseded_by_ids = [ref.get("Id") for ref in superseded_by.findall(f"{{{NS}}}Revision")]
+    # EULAs — pipe-separated digests
+    eula_digests = [e["digest"] for e in eula_list]
 
     rows.append({
-        # Identifiers
-        "revision_id":             rid,
-        "update_id":               data["update_id"],
-        "revision_number":         data["revision_number"],
-        # Dates
-        "creation_date":           data["creation_date"],
-        # Localized content
-        "title":                   title,
-        "description":             description,
-        "more_info_url":           localized.get("more_info_url") if localized else None,
-        "support_url":             localized.get("support_url")   if localized else None,
-        "default_language":        data["default_language"],
-        "available_languages":     "|".join(localized.get("available_languages", []) if localized else []),
-        # Flags
-        "is_leaf":                 data["is_leaf"],
-        "is_bundle":               data["is_bundle"],
-        "deployment_action":       data["deployment_action"],
-        "update_type":             c.get("update_type"),
-        "explicitly_deployable":   c.get("explicitly_deployable"),
-        "auto_select_on_websites": c.get("auto_select_on_websites"),
-        # Product info (from x file)
-        "product_name":            x.get("product_name"),
-        "release_version":         x.get("release_version"),
-        # Security
-        "severity":                x.get("severity"),
-        "kb_article_id":           x.get("kb_article_id"),
-        # Languages (from x file)
-        "languages":               "|".join(x.get("languages", [])),
-        # Categories — inlined as pipe-separated values
-        "product_ids":             "|".join(product_ids),
-        "product_names":           "|".join(product_names),
-        "product_family_ids":      "|".join(family_ids),
-        "product_family_names":    "|".join(family_names),
-        "classification_ids":      "|".join(classif_ids),
-        "classification_names":    "|".join(classif_names),
+        # (:Update) attributes
+        "revision_id":                 rid,
+        "update_id":                   data["update_id"],
+        "revision_number":             data["revision_number"],
+        "creation_date":               data["creation_date"],
+        "default_language":            data["default_language"],
+        "is_leaf":                     data["is_leaf"],
+        "is_bundle":                   data["is_bundle"],
+        "is_software":                 data["is_software"],
+        "deployment_action":           data["deployment_action"],
+        "url":                         data["url"],
+        "title":                       l.get("title"),
+        "description":                 l.get("description"),
+        "more_info_url":               l.get("more_info_url"),
+        "support_url":                 l.get("support_url"),
+        "uninstall_notes":             l.get("uninstall_notes"),
+        "msr_severity":                x.get("msr_severity"),
+        "browse_only":                 x.get("browse_only"),
+        "is_beta":                     x.get("is_beta"),
+        "release_version":             x.get("release_version"),
+        "release_revision":            x.get("release_revision"),
+        "min_download_size":           x.get("min_download_size"),
+        "max_download_size":           x.get("max_download_size"),
+        "recommended_hard_disk_space": x.get("recommended_hard_disk_space"),
+        "recommended_memory":          x.get("recommended_memory"),
+        "recommended_cpu_speed":       x.get("recommended_cpu_speed"),
+        "can_source_be_required":      x.get("can_source_be_required"),
+        "product_code":                x.get("product_code"),
+        "update_type":                 c.get("update_type"),
+        "explicitly_deployable":       c.get("explicitly_deployable"),
+        "completely_offline_capable":  c.get("completely_offline_capable"),
+        "inf":                         c.get("inf"),
         # Relations — inlined as pipe-separated IDs
-        "prerequisite_ids":        "|".join(data.get("prerequisites", [])),
-        "bundled_by_ids":          "|".join(bundled_by_ids),
-        "superseded_by_ids":       "|".join(superseded_by_ids),
-        # EULA
-        "has_eula":                "true" if eula_data else "false",
-        "eula_digest":             eula_data.get("digest_hex") if eula_data else None,
+        "languages":           "|".join(data.get("languages", [])),
+        "prerequisite_ids":    "|".join([p["id"] for p in data.get("prerequisites", []) if not p["is_or"]]),
+        "prerequisite_or_ids": "|".join([p["id"] for p in data.get("prerequisites", []) if p["is_or"]]),
+        "bundled_by_ids":      "|".join(data.get("bundled_by", [])),
+        "superseded_by_ids":   "|".join(data.get("superseded_by", [])),
+        "kb_article_id":       x.get("kb_article_id"),
+        "bulletin_id":         x.get("bulletin_id"),
+        "cve_ids":             "|".join(x.get("cve_ids", [])),
+        "eula_digests":        "|".join(eula_digests),
+        "requires_reacceptance": x.get("requires_reacceptance"),
+        "behavior_id":         behavior_id,
+        # Category — inlined
+        "company":                  _name(company_cat),
+        "company_id":               _id(company_cat),
+        "product_family":           _name(family_cat),
+        "product_family_id":        _id(family_cat),
+        "product":                  _name(product_cat),
+        "product_id":               _id(product_cat),
+        "update_classification":    _name(classif_cat),
+        "update_classification_id": _id(classif_cat),
+        "category_source":          "Category" if any([company_cat, family_cat, product_cat, classif_cat]) else (
+                                    "AtLeastOne" if c.get("at_least_one_categories") else None
+                                    ),
     })
 
-# Write the single flat CSV
 FIELDNAMES = [
-    "revision_id", "update_id", "revision_number",
-    "creation_date",
-    "title", "description", "more_info_url", "support_url",
-    "default_language", "available_languages",
-    "is_leaf", "is_bundle", "deployment_action",
-    "update_type", "explicitly_deployable", "auto_select_on_websites",
-    "product_name", "release_version",
-    "severity", "kb_article_id",
-    "languages",
-    "product_ids", "product_names",
-    "product_family_ids", "product_family_names",
-    "classification_ids", "classification_names",
-    "prerequisite_ids", "bundled_by_ids", "superseded_by_ids",
-    "has_eula", "eula_digest",
+    "revision_id", "update_id", "revision_number", "creation_date",
+    "default_language", "is_leaf", "is_bundle", "is_software", "deployment_action", "url",
+    "title", "description", "more_info_url", "support_url", "uninstall_notes",
+    "msr_severity", "browse_only", "is_beta", "release_version", "release_revision",
+    "min_download_size", "max_download_size", "recommended_hard_disk_space",
+    "recommended_memory", "recommended_cpu_speed", "can_source_be_required", "product_code",
+    "update_type", "explicitly_deployable", "completely_offline_capable", "inf",
+    "languages", "prerequisite_ids", "prerequisite_or_ids",
+    "bundled_by_ids", "superseded_by_ids",
+    "kb_article_id", "bulletin_id", "cve_ids",
+    "eula_digests", "requires_reacceptance", "behavior_id",
+    "company", "company_id",
+    "product_family", "product_family_id",
+    "product", "product_id",
+    "update_classification", "update_classification_id",
+    "category_source",
 ]
 
 path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)

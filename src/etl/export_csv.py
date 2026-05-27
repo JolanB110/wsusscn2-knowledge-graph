@@ -17,7 +17,7 @@ from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data,
 # CONFIGURATION
 
 OUTPUT_DIR  = "data/csv"
-SAMPLE_SIZE = 5000
+SAMPLE_SIZE = None
 # |
 # V
 # /!\ SAMPLE_SIZE will be huge if you set it to None,
@@ -128,7 +128,7 @@ for u in updates:
     })
 
     # --- (:Update)-[:HAS_LANGUAGE]->(:Language) ---
-    for lang_code in data.get("languages", []):
+    for lang_code in l.get("available_languages", []):
         languages.add(lang_code)
         rel_has_language_rows.append({"revision_id": rid, "language_code": lang_code})
 

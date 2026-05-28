@@ -162,7 +162,7 @@ def get_x_data(revision_id):
     requires_network       = install.get("RequiresNetworkConnectivity") if install is not None else None
 
     patching_type = None
-    file_node = props.find("File")
+    file_node = props.find("Files/File")
     if file_node is not None:
         patching_type = file_node.get("PatchingType")
 
@@ -251,22 +251,22 @@ def get_c_data(revision_id):
     eula_id               = props.get("EulaID")               if props is not None else None
 
     completely_offline = None
-    pkg_ext = root.find("packageExtended")
+    pkg_ext = root.find(".//packageExtended")
     if pkg_ext is not None:
         completely_offline = pkg_ext.get("completelyOfflineCapable")
 
     inf = None
-    driver_node = root.find("driver")
+    driver_node = root.find(".//driver")
     if driver_node is not None:
         inf = driver_node.get("inf")
 
     # permanence — most restrictive value across all <package> elements
-    permanence_values = [pkg.get("permanence") for pkg in root.findall("package") if pkg.get("permanence")]
+    permanence_values = [pkg.get("permanence") for pkg in root.findall(".//package") if pkg.get("permanence")]
     permanence = _most_restrictive_permanence(permanence_values)
 
     # selfUpdate — true when present on any <package> element
     self_update = None
-    for pkg in root.findall("package"):
+    for pkg in root.findall(".//package"):
         if pkg.get("selfUpdate") is not None:
             self_update = pkg.get("selfUpdate")
             break

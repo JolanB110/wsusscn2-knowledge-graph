@@ -78,8 +78,8 @@ def build_category_registry():
             cat_id   = cat.get("Id")
             cat_type = cat.get("Type")
 
-            # Skip Company categories and already processed IDs
-            if not cat_id or cat_type == "Company":
+            # Skip already processed IDs
+            if not cat_id:
                 continue
             if cat_id in registry:
                 continue

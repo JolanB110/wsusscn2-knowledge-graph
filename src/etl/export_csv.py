@@ -235,7 +235,7 @@ for u in updates:
         rel_belongs_to_rows.append({
             "revision_id":  rid,
             "category_key": cat_key,
-            "source":       "Category",
+            "complete": True,
         })
 
     # AtLeastOne IsCategory — BELONGS_TO source:AtLeastOne for updates without package.xml category
@@ -246,7 +246,7 @@ for u in updates:
             rel_belongs_to_rows.append({
                 "revision_id":  rid,
                 "category_key": cat_id,
-                "source":       "AtLeastOne",
+                "complete": False,
             })
 
 
@@ -301,7 +301,7 @@ write_csv("languages.csv",
 )
 
 # Relations
-write_csv("rel_belongs_to.csv",    rel_belongs_to_rows,    ["revision_id", "category_key", "source"])
+write_csv("rel_belongs_to.csv",    rel_belongs_to_rows,    ["revision_id", "category_key", "complete"])
 write_csv("rel_has_kb.csv",        rel_has_kb_rows,        ["revision_id", "kb_article_id"])
 write_csv("rel_fixes.csv",         rel_fixes_rows,         ["revision_id", "cve_id"])
 write_csv("rel_has_eula.csv",      rel_has_eula_rows,      ["revision_id", "digest", "requires_reacceptance"])

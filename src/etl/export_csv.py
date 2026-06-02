@@ -103,7 +103,6 @@ for u in updates:
         "is_bundle":                   data["is_bundle"],
         "is_software":                 data["is_software"],
         "deployment_action":           data["deployment_action"],
-        "url":                         data["url"],
         "title":                       l.get("title"),
         "description":                 l.get("description"),
         "more_info_url":               l.get("more_info_url"),
@@ -125,6 +124,7 @@ for u in updates:
         "explicitly_deployable":       c.get("explicitly_deployable"),
         "completely_offline_capable":  c.get("completely_offline_capable"),
         "inf":                         c.get("inf"),
+        "auto_select_on_websites":     c.get("auto_select_on_websites"),
     })
 
     # --- (:Update)-[:HAS_LANGUAGE]->(:Language) ---
@@ -262,12 +262,12 @@ def write_csv(filename, rows, fieldnames):
 # Nodes
 write_csv("updates.csv", updates_rows, [
     "revision_id", "update_id", "revision_number", "creation_date",
-    "default_language", "is_leaf", "is_bundle", "is_software", "deployment_action", "url",
+    "default_language", "is_leaf", "is_bundle", "is_software", "deployment_action",
     "title", "description", "more_info_url", "support_url", "uninstall_notes",
     "msr_severity", "browse_only", "is_beta", "release_version", "release_revision",
     "min_download_size", "max_download_size", "recommended_hard_disk_space",
     "recommended_memory", "recommended_cpu_speed", "can_source_be_required", "product_code",
-    "update_type", "explicitly_deployable", "completely_offline_capable", "inf",
+    "update_type", "explicitly_deployable", "completely_offline_capable", "inf", "auto_select_on_websites",
 ])
 
 write_csv("categories.csv", list(categories.values()), [

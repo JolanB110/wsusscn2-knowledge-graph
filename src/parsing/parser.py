@@ -15,6 +15,7 @@ through all packages for each update."""
 NS = "http://schemas.microsoft.com/msus/2004/02/OfflineSync"
 WSUS_DIR = os.environ["WSUS_DIR"]
 PACKAGE_XML = os.path.join(WSUS_DIR, "package.xml")
+_ASM_NS = "urn:schemas-microsoft-com:asm.v3"
 
 if not os.path.exists("index.json"):
     import build_index
@@ -84,14 +85,6 @@ def parse_update(update):
     if superseded_node is not None:
         superseded_by = [ref.get("Id") for ref in superseded_node.findall(f"{{{NS}}}Revision")]
 
-    # FileLocation URL — direct child of Update
-    url = None
-    file_locs = update.find(f"{{{NS}}}FileLocations")
-    if file_locs is not None:
-        fl = file_locs.find(f"{{{NS}}}FileLocation")
-        if fl is not None:
-            url = fl.get("Url")
-
     # Languages for HAS_LANGUAGE relation
     languages = [
         lang.get("Name")
@@ -109,7 +102,6 @@ def parse_update(update):
         "is_bundle":         update.get("IsBundle"),
         "is_software":       update.get("IsSoftware"),
         "deployment_action": update.get("DeploymentAction"),
-        "url":               url,
         "languages":         languages,
         "prerequisites":     prerequisites,
         "categories":        categories,
@@ -143,7 +135,7 @@ def get_x_data(revision_id):
 
     # productCode — normalized to lowercase
     product_code = None
-    msi_node = props.find("MsiData")
+    msi_node = root.find(".//MsiData")
     if msi_node is not None:
         raw = msi_node.get("ProductCode")
         if raw:
@@ -162,7 +154,7 @@ def get_x_data(revision_id):
     requires_network       = install.get("RequiresNetworkConnectivity") if install is not None else None
 
     patching_type = None
-    file_node = props.find("Files/File")
+    file_node = root.find("Files/File")
     if file_node is not None:
         patching_type = file_node.get("PatchingType")
 
@@ -251,22 +243,32 @@ def get_c_data(revision_id):
     eula_id               = props.get("EulaID")               if props is not None else None
 
     completely_offline = None
-    pkg_ext = root.find(".//packageExtended")
+    pkg_ext = root.find(f".//{{{_ASM_NS}}}packageExtended")
+    if pkg_ext is None:
+        pkg_ext = root.find(".//packageExtended")
     if pkg_ext is not None:
         completely_offline = pkg_ext.get("completelyOfflineCapable")
 
     inf = None
-    driver_node = root.find(".//driver")
+    driver_node = root.find(f".//{{{_ASM_NS}}}driver")
+    if driver_node is None:
+        driver_node = root.find(".//driver")
     if driver_node is not None:
         inf = driver_node.get("inf")
 
     # permanence — most restrictive value across all <package> elements
-    permanence_values = [pkg.get("permanence") for pkg in root.findall(".//package") if pkg.get("permanence")]
+    permanence_values = [
+                            pkg.get("permanence")
+                            for pkg in root.findall(f".//{{{_ASM_NS}}}package") + root.findall(".//package")
+                            if pkg.get("permanence")
+                        ]
     permanence = _most_restrictive_permanence(permanence_values)
+
+    auto_select = props.get("AutoSelectOnWebSites") if props is not None else None
 
     # selfUpdate — true when present on any <package> element
     self_update = None
-    for pkg in root.findall(".//package"):
+    for pkg in root.findall(f".//{{{_ASM_NS}}}package") + root.findall(".//package"):
         if pkg.get("selfUpdate") is not None:
             self_update = pkg.get("selfUpdate")
             break
@@ -289,6 +291,7 @@ def get_c_data(revision_id):
         "permanence":                permanence,
         "self_update":               self_update,
         "at_least_one_categories":   at_least_one_categories,
+        "auto_select_on_websites":   auto_select,
     }
 
 

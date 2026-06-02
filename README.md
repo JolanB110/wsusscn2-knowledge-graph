@@ -1,119 +1,172 @@
-# wsusscn2-knowledge-graph
+# WSUS SCN2 Knowledge Graph
 
-[![GitHub stars](https://img.shields.io/github/stars/JolanB110/wsusscn2-knowledge-graph)](https://github.com/JolanB110/wsusscn2-knowledge-graph)
-[![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/status-in%20progress-orange)]()
+[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 
-## Overview
+A Python pipeline that converts the Microsoft WSUS offline scan catalog (`wsusscn2.cab`) into structured CSV outputs and Neo4j-ready import artifacts. It helps analyze Windows update metadata, dependency relationships, vulnerability fixes, product categories, and EULA metadata.
 
-**wsusscn2-knowledge-graph** is a research project that builds a structured knowledge graph from the Microsoft Windows Update offline catalog (`wsusscn2.cab`).
+## Table of Contents
 
-The catalog contains metadata for over **136,000 Windows updates** distributed across 75 packages in XML format. This project extracts, models, and stores this data as a knowledge graph to enable structured querying of patch metadata, security vulnerabilities, update dependencies, and product relationships.
+- [WSUS SCN2 Knowledge Graph](#wsus-scn2-knowledge-graph)
+  - [Table of Contents](#table-of-contents)
+  - [What this project does](#what-this-project-does)
+  - [Why it is useful](#why-it-is-useful)
+  - [Graph model](#graph-model)
+  - [Getting started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Install dependencies](#install-dependencies)
+    - [Configure the WSUS directory](#configure-the-wsus-directory)
+    - [Build the revision index](#build-the-revision-index)
+  - [Key workflows](#key-workflows)
+    - [Export graph CSV files](#export-graph-csv-files)
+    - [Import into Neo4j](#import-into-neo4j)
+    - [Inspect an update by revision ID](#inspect-an-update-by-revision-id)
+  - [Project structure](#project-structure)
+  - [Help and support](#help-and-support)
 
-> Internship project at **ERIC Laboratory, Université Lyon 2** (April – June 2026).
+## What this project does
 
----
+This repository parses the WSUS scan catalog and extracts:
 
-## Data Source
+- update metadata and release attributes from `package.xml`
+- extended properties from `/x/` files
+- titles, descriptions, and URLs from `/l/en/` files
+- package and driver metadata from `/c/` files
+- EULA metadata from `/e/` files
+- relationships between updates, categories, KB articles, CVEs, and languages
 
-The `wsusscn2.cab` file is the Microsoft Windows Update offline scan file, publicly available from Microsoft's servers. It contains metadata for more than **136,270 updates** distributed across more than **74 packages**.
+It produces:
 
-### Catalog Structure
+- normalized CSV files for a graph model
+- a flattened CSV export for spreadsheet or data analysis
+- a Neo4j import pipeline via `src/main.py` that copies CSV files into Neo4j's import directory and loads constraints, nodes, and relationships
 
-Each package exposes up to 6 data sources, all linked by a `RevisionId` key:
+## Why it is useful
 
-| Source | Content | Patterns |
-|---|---|---|
-| `package/package.xml` | Global structure, relations, identifiers | - |
-| `/x/` | Technical metadata (KB, severity, product version) | 166 |
-| `/l/en/` | Human-readable titles and descriptions | 8 |
-| `/c/` | Complementary configuration data | 1569 |
-| `/e/` | EULA metadata (133 unique RevisionIds, 29-38 languages each) | 2 |
-| `/files/` | Raw EULA text files (UTF-16, SHA1 content-addressable, package2 only) | - |
+This project is useful for developers, security analysts, and researchers who need to:
 
-Patterns represente the number of unique patterns of attributes and balies in the catalog. For example, we can have a /l/en/ files with `Language`, `Title`, `LocalizedProperties` and `Description` and another files with `Language`, `Title`, `LocalizedProperties` but no `Description`. These two files would be counted as 2 patterns.
+- analyze Windows patch metadata at scale
+- explore update dependencies and bundle relationships
+- map updates to CVEs and KB articles
+- build a knowledge graph from WSUS offline catalog data
+- avoid re-scanning the raw archive for repeated analysis
 
----
+## Graph model
 
-## Graph Model (V2 - in progress)
+![Graph model diagram](docs/images/Model.png)
 
-![alt text](https://github.com/JolanB110/wsusscn2-knowledge-graph/blob/main/docs/images/Model.png)
+The diagram shows the core graph model used for WSUS data:
 
----
+- `Update` nodes represent individual Windows updates and include metadata from `package.xml`, `/x/`, `/l/en/`, and `/c/` files.
+- `Category` nodes group updates by company, product family, product, and update classification.
+- `KBArticle`, `CVE`, `Eula`, `Language`, and `UpdateBehavior` nodes capture related metadata and link back to updates.
+- Relationship edges such as `BELONGS_TO`, `HAS_KB`, `FIXES`, `HAS_EULA`, and `HAS_LANGUAGE` express the catalog's semantic connections.
+- Some relationships carry important attributes:
+  - `BELONGS_TO` uses `complete` to distinguish full category assignments from partial/AtLeastOne matches
+  - `DEPENDS_ON` uses `is_or` to preserve prerequisite logic
+  - `HAS_EULA` uses `requires_reacceptance` to flag EULA reacceptance requirements
 
-## Repository Structure
+## Getting started
 
+### Prerequisites
+
+- Python 3.12.10
+- `pip`
+- a local extraction of `wsusscn2.cab`
+- `WSUS_DIR` set to the extracted catalog root
+- optionally, Neo4j for graph imports
+
+### Install dependencies
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
-wsusscn2-knowledge-graph/
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── data/ 
-│   └── output/
-│       └── .gitkeep
-├── docs/
-│   └── images/
-│       └── .gitkeep
-│
-├── tests/
-│   └── parse_test.py
-│
-└── src/
-    ├── etl/
-    │   ├── explore_cat_names.py
-    │   └── export_csv.py
-    ├── parsing/
-    │   ├── build_index.py
-    │   └── parser.py
-    └── tools/
-        └── inspect_update.py
+
+### Configure the WSUS directory
+
+Point the pipeline to your extracted WSUS catalog folder.
+
+**Windows (PowerShell):**
+
+```powershell
+$env:WSUS_DIR = 'C:\path\to\wsusscn2'
 ```
 
----
+**Windows (CMD):**
 
-## Installation
-
-```bash
-git clone https://github.com/JolanB110/wsusscn2-knowledge-graph.git
-cd wsusscn2-knowledge-graph
-pip install lxml neo4j
-```
-
-> The `wsusscn2.cab` file is not included in this repository.  
-> Download it from Microsoft's servers and extract it into a local directory with this link : (iwr https://wsusscn2.cab -OutFile wsusscn2.cab) or (curl.exe -L https://wsusscn2.cab -o wsusscn2.cab)
-
----
-
-## Configuration
-Before running any script, set the `WSUS_DIR` environment variable to your local wsusscn2 extraction path:
-
-**Windows:**
+```cmd
 set WSUS_DIR=C:\path\to\wsusscn2
+```
 
 **Linux/macOS:**
+
+```bash
 export WSUS_DIR=/path/to/wsusscn2
+```
 
-## Tech Stack
+> `wsusscn2.cab` is not included in this repository. Download it from Microsoft and extract it locally before running the scripts.
+>
+> The repository expects the full WSUS catalog tree to be extracted under `WSUS_DIR`, including nested CAB contents and folders such as `x`, `l`, `c`, `e`, and `package.xml`.
 
-- **Python 3.11** — data extraction and preprocessing (`lxml`, `neo4j` driver)
-- **BaseX 12.2** — XQuery-based XML exploration
-- **Graph database** —  Neo4j Aura
+### Build the revision index
 
----
+The parser uses `index.json` to locate WSUS files efficiently.
 
-## Progress
+```bash
+python src/parsing/build_index.py
+```
 
-- [x] Phase 1 — Data exploration and inventory
-- [x] Phase 2 — Python parsing pipeline (in progress)
-- [x] Phase 3 — Graph model validation (in progress)
-- [x] Phase 4 — Graph database import (in progress)
-- [ ] Phase 5 — Visualization and querying
+If `category_registry.json` is needed, generate or refresh it with:
 
----
+```bash
+python src/etl/explore_cat_names.py
+```
 
-## References
+## Key workflows
 
-- [Microsoft WSUS Offline Scan File documentation](https://support.microsoft.com/en-us/topic/detailed-information-for-developers-who-use-the-windows-update-offline-scan-file-51db1d9e-038b-0b15-16e7-149aba45f295)
-- [Neo4j documentation](https://neo4j.com/docs/getting-started/)
-- [Neo4j Python driver](https://neo4j.com/docs/python-manual/current/)
-- [BaseX documentation](https://docs.basex.org)
+### Export graph CSV files
+
+Generate node and relationship CSV files for Neo4j import:
+
+```bash
+python src/etl/export_csv.py
+```
+
+### Import into Neo4j
+
+Update `src/main.py` to match your Neo4j connection settings and import path, then run:
+
+```bash
+python src/main.py
+```
+
+### Inspect an update by revision ID
+
+Explore a specific revision with `src/tools/inspect_update.py`, an interactive inspector that uses `index.json` to look up update metadata and localized text.
+
+```bash
+python src/tools/inspect_update.py
+```
+
+## Project structure
+
+- `requirements.txt` — Python dependencies
+- `src/parsing/parser.py` — WSUS XML parsing logic
+- `src/parsing/build_index.py` — builds `index.json`
+- `src/etl/export_csv.py` — exports graph CSV files
+- `src/etl/export_csv_unique.py` — exports a flat CSV file
+- `src/etl/explore_cat_names.py` — maps category IDs to names
+- `src/tools/inspect_update.py` — interactive update inspector
+- `src/main.py` — copies exported CSV files into Neo4j's import directory and loads the graph model
+- `data/csv/` — output location for generated CSV files
+- `docs/images/Model.png` — graph model diagram
+
+## Help and support
+
+For issues or questions, use the repository issue tracker and read the source-level documentation in the script headers.
+
+- `requirements.txt` for dependency details
+- `src/parsing/parser.py` for parsing behavior and model details
+- `src/etl/export_csv.py` and `src/etl/export_csv_unique.py` for export workflows
+- `src/main.py` for Neo4j import setup

@@ -6,6 +6,8 @@ __pycache__/
 test.py
 test[0-9].py
 tempCodeRunnerFile.py
+src/etl/export_csv_oneshotLLM.py
+src/etl/export_csv_unique.py
 
 # Data files — ne jamais pousser la bibliothèque wsusscn2
 *.cab
@@ -28,3 +30,9 @@ test.txt
 # Test Folder
 
 test/*
+
+# Catalog Folder
+
+data/catalog/*
+!data/catalog/.gitkeep
+data/catalog/extracted/

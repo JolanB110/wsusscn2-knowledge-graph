@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 CATALOG_DIR  = os.path.join(os.path.dirname(__file__), "..", "..", "data", "catalog")
 EXTRACTED_DIR = os.path.join(CATALOG_DIR, "extracted")
 CAB_PATH      = os.path.join(CATALOG_DIR, "wsusscn2.cab")
-MAX_WORKERS   = 12
+MAX_WORKERS   = 10
 
 
 def extract_main_cab():

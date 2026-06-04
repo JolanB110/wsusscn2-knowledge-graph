@@ -103,7 +103,7 @@ def main():
 
     # Étape 5 — Import Neo4j
     print("\n=== Import Neo4j ===")
-    import_graph("neo4j://127.0.0.1:7687", password, CSV_DIR, dbms["import_dir"])
+    import_graph("bolt://127.0.0.1:7687", password, CSV_DIR, dbms["import_dir"])
 
     print("\n=== Pipeline terminée avec succès ===")
 

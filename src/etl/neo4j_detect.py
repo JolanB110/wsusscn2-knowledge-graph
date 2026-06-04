@@ -4,7 +4,6 @@ from neo4j import GraphDatabase
 
 
 def find_neo4j_dbms():
-    """Scanne les dbms disponibles et retourne leurs infos."""
     dbms_base = os.path.join(os.environ["USERPROFILE"], ".Neo4jDesktop2", "Data", "dbmss")
     dbms_list = []
 
@@ -18,12 +17,14 @@ def find_neo4j_dbms():
         with open(meta_path) as f:
             meta = json.load(f)
         dbms_list.append({
-            "name":       meta.get("name", entry),
-            "uuid":       meta.get("id", entry),
-            "import_dir": import_dir,
+            "name":            meta.get("name", entry),
+            "uuid":            meta.get("id", entry),
+            "import_dir":      import_dir,
+            "last_started_at": meta.get("metadata", {}).get("lastStartedAt", 0),
         })
 
-    return dbms_list
+    # Trier par lastStartedAt décroissant — l'instance la plus récemment démarrée en premier
+    return sorted(dbms_list, key=lambda x: x["last_started_at"], reverse=True)
 
 
 def select_dbms(password):
@@ -34,7 +35,19 @@ def select_dbms(password):
         print("Aucune base Neo4j détectée.")
         return None
 
-    uri = "neo4j://127.0.0.1:7687"
+    uri = "bolt://127.0.0.1:7687"
+
+    # Vérifier si une instance est démarrée
+    try:
+        driver = GraphDatabase.driver(uri, auth=("neo4j", password))
+        driver.verify_connectivity()
+        driver.close()
+    except Exception:
+        print("Aucune instance Neo4j démarrée sur neo4j://127.0.0.1:7687.")
+        print("Démarrez votre base dans Neo4j Desktop et relancez le script.")
+        return None
+
+    # Détecter laquelle est active
     for dbms in dbms_list:
         try:
             driver = GraphDatabase.driver(uri, auth=("neo4j", password))
@@ -45,6 +58,7 @@ def select_dbms(password):
         except Exception:
             continue
 
+    # Aucune détection automatique — lister et demander
     print("Bases Neo4j disponibles :")
     for i, dbms in enumerate(dbms_list, 1):
         print(f"  {i}. {dbms['name']} ({dbms['uuid'][:8]}...)")

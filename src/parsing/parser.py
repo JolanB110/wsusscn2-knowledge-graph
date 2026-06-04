@@ -199,7 +199,6 @@ def get_l_data(revision_id):
     if not path:
         return {}
 
-    package = index[revision_id]["package"]
     root = _read_wrapped(path)
 
     title           = root.find(".//Title")
@@ -208,11 +207,8 @@ def get_l_data(revision_id):
     support_url     = root.find(".//SupportUrl")
     uninstall_notes = root.find(".//UninstallNotes")
 
-    l_base = os.path.join(WSUS_DIR, package, "l")
-    available_languages = sorted([
-        lang for lang in os.listdir(l_base)
-        if os.path.exists(os.path.join(l_base, lang, revision_id))
-    ])
+    # Languages pre-computed in build_index.py — avoids 136k × os.listdir() calls
+    available_languages = index[revision_id].get("languages", [])
 
     return {
         "title":               title.text           if title           is not None else None,
@@ -353,14 +349,10 @@ if __name__ == "__main__":
     updates_node = root.find(f"{{{NS}}}Updates")
     updates = updates_node.findall(f"{{{NS}}}Update")
 
-    #test_lengths = [10, 100, 1000, 10000, 100000, len(updates)]
     test_lengths = [len(updates)]
-    os.makedirs("data/output", exist_ok=True)
 
     for i in test_lengths:
-        results = []
         start = time.time()
-
         for u in updates[:i]:
             data = parse_update(u)
             rid  = data["revision_id"]
@@ -368,9 +360,5 @@ if __name__ == "__main__":
             data.update(get_l_data(rid))
             data.update(get_c_data(rid))
             data["eulas"] = get_e_data(rid)
-            results.append(data)
-
         duration = time.time() - start
-        with open(f"data/output/output_sample_{i}.json", "w") as f:
-            json.dump(results, f, indent=2)
         print(f"{i} updates : {duration:.2f}s")

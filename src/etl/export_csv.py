@@ -334,6 +334,7 @@ if __name__ == "__main__":
     results = []
     with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
         futures = {executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)}
+        chunks.clear()  # libère la RAM des chunks sérialisés
         for future in as_completed(futures):
             i = futures[future]
             result = future.result()

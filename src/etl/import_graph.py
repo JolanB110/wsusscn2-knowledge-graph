@@ -209,7 +209,7 @@ def import_graph(uri, password, csv_dir, import_dir):
             MATCH (u:Update {revision_id: row.revision_id})
             MATCH (l:Language {language_code: row.language_code})
             MERGE (u)-[:HAS_LANGUAGE]->(l)
-            } IN TRANSACTIONS OF 10000 ROWS
+            } IN TRANSACTIONS OF 5000 ROWS
         """, "HAS_LANGUAGE (Update)")
 
         run(session, """

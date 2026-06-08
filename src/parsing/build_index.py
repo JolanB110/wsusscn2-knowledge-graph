@@ -2,18 +2,23 @@ import os
 import json
 
 """This script builds an index of all the revision IDs present in the WSUS directory,
-along with the corresponding package and whether the x and l files exist for each 
+along with the corresponding package and whether the x, l, c and e files exist for each 
 revision ID to permit a more efficient parsing in the future, as we will be able to 
 directly access the relevant files."""
 
-
-# Modify this path to point to your local WSUS directory
-WSUS_DIR = os.environ["WSUS_DIR"]
+# set WSUS_DIR from environment variable, with error handling if not set
+WSUS_DIR = os.environ.get("WSUS_DIR")
+if not WSUS_DIR:
+    raise EnvironmentError(
+        "The WSUS_DIR environment variable is not set.\n"
+        "Run the script via main.py or set WSUS_DIR manually."
+    )
 
 index = {}
 
 def _ensure(revision_id, package):
     """Ensure a revision_id entry exists in the index with default values."""
+
     if revision_id not in index:
         index[revision_id] = {"package": package, "has_x": False, "has_l": False, "has_c": False, "has_e": False, "languages": []}
 
@@ -34,7 +39,7 @@ for package in os.listdir(WSUS_DIR):
             _ensure(filename, package)
             index[filename]["has_x"] = True
 
-    # Traverse all language subdirs at once — build languages list per revision_id
+    # Traverse all language subdirs at once - build languages list per revision_id
     # This avoids 136k × os.listdir() calls later in get_l_data()
     if os.path.exists(l_base):
         for lang in os.listdir(l_base):
@@ -48,6 +53,7 @@ for package in os.listdir(WSUS_DIR):
                 if lang not in index[filename]["languages"]:
                     index[filename]["languages"].append(lang)
 
+    # We do the same for c and e files, but we only care about the existence of the file, not the language
     if os.path.exists(c_path):
         for filename in os.listdir(c_path):
             _ensure(filename, package)
@@ -68,4 +74,4 @@ with open("index.json", "w") as f:
 
 # The JSON file will not be commited to the repository because it can be builded locally using this script
 
-print(f"Index créé : {len(index)} entrées")
+print(f"Index created : {len(index)} entries")

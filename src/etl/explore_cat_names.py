@@ -35,6 +35,8 @@ for u in updates:
 
 def get_title_from_revid(revision_id):
     """Read /l/en/revision_id and return the Title text, or None if not found."""
+
+    # First check if the revision_id exists in the index and has an /l/ entry
     if revision_id not in index:
         return None
     if not index[revision_id].get("has_l"):
@@ -69,6 +71,7 @@ def build_category_registry():
 
     registry = {}
 
+    # Iterate over all updates and their categories, resolve names, and populate the registry
     for u in updates:
         cats_node = u.find(f"{{{NS}}}Categories")
         if cats_node is None:
@@ -96,7 +99,7 @@ def build_category_registry():
 
     return registry
 
-
+# When run as a script, build the registry and save to JSON for use in export_csv.py
 if __name__ == "__main__":
     print("Building category registry...")
     registry = build_category_registry()
@@ -107,7 +110,7 @@ if __name__ == "__main__":
         by_type.setdefault(info["type"], []).append((cat_id, info["name"]))
 
     for cat_type, entries in sorted(by_type.items()):
-        print(f"\n  {cat_type} — {len(entries)} entries")
+        print(f"\n  {cat_type} - {len(entries)} entries")
         for cat_id, name in entries[:5]:
             print(f"    {cat_id} -> {name}")
         if len(entries) > 5:

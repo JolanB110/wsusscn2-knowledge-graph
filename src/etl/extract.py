@@ -2,6 +2,11 @@ import subprocess
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+"""Module d'extraction du catalogue de mises à jour Microsoft. Il extrait le fichier CAB principal pour obtenir package.cab,
+puis extrait package.xml pour savoir quels autres fichiers CAB de package* extraire, et enfin extrait tous les fichiers CAB 
+de package* en parallèle."""
+
+# CONFIGURATION
 CATALOG_DIR  = os.path.join(os.path.dirname(__file__), "..", "..", "data", "catalog")
 EXTRACTED_DIR = os.path.join(CATALOG_DIR, "extracted")
 CAB_PATH      = os.path.join(CATALOG_DIR, "wsusscn2.cab")
@@ -9,27 +14,31 @@ MAX_WORKERS   = 10
 
 
 def extract_main_cab():
-    """Passe 1 — extrait les package*.cab et index.xml depuis wsusscn2.cab."""
+    """Extract wsusscn2.cab to get package.cab, which contains package.xml and all package*.cab files."""
+
     os.makedirs(EXTRACTED_DIR, exist_ok=True)
-    print("Extraction du catalogue principal (wsusscn2.cab)...")
+    print("Extracting the main catalog (wsusscn2.cab)...")
     subprocess.run(["expand", CAB_PATH, "-F:*", EXTRACTED_DIR], check=True, capture_output=True)
-    print("Catalogue principal extrait.")
+    print("Main catalog excerpt.")
 
 
 def extract_package_xml():
-    """Passe 2 — extrait package.xml depuis package.cab en deux passes."""
-    print("Extraction de package.xml...")
+    """Extract package.xml from package.cab, which is needed to know which package*.cab files to extract in the next step."""
+
+    print("Extraction of package.xml...")
     package_cab = os.path.join(EXTRACTED_DIR, "package.cab")
     package_xml = os.path.join(EXTRACTED_DIR, "package.xml")
 
-    # Passe 1 : extraire package.cab depuis wsusscn2.cab
+    # extract package.cab from wsusscn2.cab
     subprocess.run(["expand", CAB_PATH, EXTRACTED_DIR, "-f:package.cab"], check=True, capture_output=True)
-    # Passe 2 : extraire package.xml depuis package.cab
+    # extract package.xml from package.cab
     subprocess.run(["expand", package_cab, package_xml, "-f:package.xml"], check=True, capture_output=True)
-    print(f"package.xml extrait ({os.path.getsize(package_xml) // 1_000_000} MB).")
+    print(f"package.xml extracted ({os.path.getsize(package_xml) // 1_000_000} MB).")
 
 
 def extract_package(cab_name):
+    """Extract a single package*.cab file, which contains the actual update metadata and files."""
+
     cab_path = os.path.join(EXTRACTED_DIR, cab_name)
     out_dir  = os.path.join(EXTRACTED_DIR, cab_name.replace(".cab", ""))
     os.makedirs(out_dir, exist_ok=True)
@@ -38,13 +47,14 @@ def extract_package(cab_name):
 
 
 def extract_packages():
-    """Passe 3 — extrait tous les package*.cab en parallèle."""
+    """Extract all package*.cab files in parallel, which contain the actual update metadata and files."""
+
     cabs = sorted([
         f for f in os.listdir(EXTRACTED_DIR)
         if f.startswith("package") and f.endswith(".cab") and f != "package.cab"
     ])
     total = len(cabs)
-    print(f"Extraction de {total} packages ({MAX_WORKERS} en parallèle)...")
+    print(f"Extraction of {total} packages ({MAX_WORKERS} Working)...")
 
     done = 0
     errors = []
@@ -55,15 +65,15 @@ def extract_packages():
             cab_name, code = future.result()
             done += 1
             status = "✓" if code == 0 else "✗"
-            print(f"\r  {status} {done}/{total} — {cab_name}          ", end="")
+            print(f"\r  {status} {done}/{total} - {cab_name}          ", end="")
             if code != 0:
                 errors.append(cab_name)
 
     print()
     if errors:
-        print(f"Erreurs : {errors}")
+        print(f"Errors : {errors}")
     else:
-        print("Tous les packages extraits avec succès.")
+        print("All package extracted with success.")
 
 
 def extract_all():

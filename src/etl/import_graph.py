@@ -3,8 +3,13 @@ import shutil
 import os
 import time
 
+"""Module d'import du graphe de connaissances dans Neo4j. Il copie les CSV extraits dans le répertoire d'import de Neo4j, 
+puis exécute une série de requêtes Cypher pour créer les noeuds et les relations du graphe à partir des CSV."""
+
 
 def run(session, query, description=""):
+    """Run a Cypher query and print the duration with a description."""
+
     start = time.time()
     session.run(query)
     duration = time.time() - start
@@ -12,7 +17,10 @@ def run(session, query, description=""):
 
 
 def import_graph(uri, password, csv_dir, import_dir):
-    print("=== Copie des CSV ===")
+    """Import the knowledge graph into Neo4j. It copies the extracted CSVs into Neo4j's import directory, then runs a series 
+    of Cypher queries to create the graph's nodes and relationships from the CSVs."""
+
+    print("=== Copy of the CSVs ===")
     for f in os.listdir(csv_dir):
         if f.endswith(".csv"):
             shutil.copy(os.path.join(csv_dir, f), import_dir)
@@ -22,7 +30,7 @@ def import_graph(uri, password, csv_dir, import_dir):
 
     with driver.session() as session:
 
-        print("\n=== Phase 1 — Contraintes ===")
+        print("\n=== Phase 1/4 - Constraints ===")
 
         run(session, """
             CREATE CONSTRAINT update_revision_id IF NOT EXISTS
@@ -64,7 +72,7 @@ def import_graph(uri, password, csv_dir, import_dir):
             FOR (u:Update) ON (u.update_id)
         """, "Index Update.update_id")
 
-        print("\n=== Phase 2 — Noeuds ===")
+        print("\n=== Phase 2/4 - Node ===")
 
         run(session, """
             LOAD CSV WITH HEADERS FROM 'file:///languages.csv' AS row
@@ -156,7 +164,7 @@ def import_graph(uri, password, csv_dir, import_dir):
             } IN TRANSACTIONS OF 5000 ROWS
         """, "Update")
 
-        print("\n=== Phase 3 — Relations ===")
+        print("\n=== Phase 3/4 - Relations ===")
 
         run(session, """
             CALL () {
@@ -248,7 +256,7 @@ def import_graph(uri, password, csv_dir, import_dir):
             } IN TRANSACTIONS OF 500 ROWS
         """, "SUPERSEDED_BY")
 
-        print("\n=== Phase 4 — Vérification ===")
+        print("\n=== Phase 4/4 - Verification ===")
 
         result = session.run("MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC")
         print("\nNoeuds :")
@@ -261,4 +269,4 @@ def import_graph(uri, password, csv_dir, import_dir):
             print(f"  {r['type']}: {r['count']}")
 
     driver.close()
-    print("\nImport terminé.")
+    print("\nImport finished.")

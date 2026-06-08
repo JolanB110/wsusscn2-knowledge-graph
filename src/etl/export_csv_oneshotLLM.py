@@ -10,7 +10,7 @@ into multiple CSV files without pre-named relations for the V3 model, which can 
 into a graph database like Neo4j for schema-free exploration.
 
 Each entity type gets its own CSV file. Cross-references between entities are expressed
-as junction tables (two ID columns only) — no relation names are imposed.
+as junction tables (two ID columns only) - no relation names are imposed.
 """
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
@@ -216,7 +216,7 @@ def write_csv(filename, rows, fieldnames):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  {filename} — {len(rows)} rows")
+    print(f"  {filename} - {len(rows)} rows")
 
 
 # Entity tables

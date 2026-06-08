@@ -7,16 +7,25 @@ import hashlib
 from lxml import etree
 
 """This script parses package.xml and the corresponding /x/, /l/en/, /c/ and /e/ files to extract
-all information needed to build the V3 knowledge graph model.
+all information needed to build the knowledge graph model.
 It reuses build_index.py to directly access relevant files via revision ID without iterating
 through all packages for each update."""
 
-
+# XML namespace for WSUS package.xml files
 NS = "http://schemas.microsoft.com/msus/2004/02/OfflineSync"
-WSUS_DIR = os.environ["WSUS_DIR"]
+# set WSUS_DIR from environment variable, with error handling if not set
+WSUS_DIR = os.environ.get("WSUS_DIR")
+if not WSUS_DIR:
+    raise EnvironmentError(
+        "The WSUS_DIR environment variable is not set.\n"
+        "Run the script via main.py or set WSUS_DIR manually."
+    )
+# Path to package.xml
 PACKAGE_XML = os.path.join(WSUS_DIR, "package.xml")
+# ASM namespace for packageExtended and driver elements in /c/ files
 _ASM_NS = "urn:schemas-microsoft-com:asm.v3"
 
+# If index.json doesn't exist, run build_index.py to create it
 if not os.path.exists("index.json"):
     import build_index
 
@@ -26,16 +35,19 @@ with open("index.json") as f:
 
 def _read_wrapped(path):
     """Read a file and return its content parsed as XML wrapped in <root>."""
+
     with open(path, "rb") as f:
         return etree.fromstring(b"<root>" + f.read() + b"</root>")
 
 
 def _get_path(revision_id, folder, subfolder=None):
     """Return the full path to a revision file if it exists, else None."""
+
     if revision_id not in index:
         return None
     entry = index[revision_id]
     parts = [WSUS_DIR, entry["package"], folder]
+
     if subfolder:
         parts.append(subfolder)
     parts.append(revision_id)
@@ -47,6 +59,7 @@ _PERMANENCE_RANK = {"permanent": 0, "permanentUntilReset": 1, "temporary": 2}
 
 def _most_restrictive_permanence(values):
     """Return the most restrictive permanence value from a list."""
+
     ranked = [v for v in values if v in _PERMANENCE_RANK]
     return min(ranked, key=lambda v: _PERMANENCE_RANK[v]) if ranked else None
 
@@ -55,7 +68,7 @@ def parse_update(update):
     """Extract all attributes from a package.xml <Update> element.
     Handles prerequisites with isOr flag, categories, bundled_by, superseded_by and url."""
 
-    # Prerequisites with isOr flag — direct UpdateId children are isOr:false, those inside <Or> are isOr:true
+    # Prerequisites with isOr flag - direct UpdateId children are isOr:false, those inside <Or> are isOr:true
     prerequisites = []
     prereq_node = update.find(f"{{{NS}}}Prerequisites")
     if prereq_node is not None:
@@ -67,6 +80,7 @@ def parse_update(update):
                 for uid in child.findall(f"{{{NS}}}UpdateId"):
                     prerequisites.append({"id": uid.get("Id"), "is_or": True})
 
+    # Categories - type and id attributes, with handling for missing Categories node
     categories = []
     cats_node = update.find(f"{{{NS}}}Categories")
     if cats_node is not None:
@@ -75,11 +89,13 @@ def parse_update(update):
             for cat in cats_node.findall(f"{{{NS}}}Category")
         ]
 
+    # BundledBy - list of UpdateIds that bundle this update, from <BundledBy> section
     bundled_by = []
     bundled_node = update.find(f"{{{NS}}}BundledBy")
     if bundled_node is not None:
         bundled_by = [ref.get("Id") for ref in bundled_node.findall(f"{{{NS}}}Revision")]
 
+    # SupersededBy - list of UpdateIds that supersede this update, from <SupersededBy> section
     superseded_by = []
     superseded_node = update.find(f"{{{NS}}}SupersededBy")
     if superseded_node is not None:
@@ -92,6 +108,7 @@ def parse_update(update):
         if lang.get("Name")
     ]
 
+    # Return all extracted attributes from package.xml Update element
     return {
         "update_id":         update.get("UpdateId"),
         "revision_id":       update.get("RevisionId"),
@@ -113,6 +130,8 @@ def parse_update(update):
 def get_x_data(revision_id):
     """Parse /x/<revision_id> and return ExtendedProperties attributes, KB, CVEs,
     MsiData/productCode, and all UpdateBehavior components."""
+
+    # handle missing /x/ file - not supposed to happen but just in case
     if not index.get(revision_id, {}).get("has_x"):
         return {}
 
@@ -120,20 +139,24 @@ def get_x_data(revision_id):
     if not path:
         return {}
 
+    # Correct the XML structure by wrapping in a root element to handle multiple top-level nodes
     root = _read_wrapped(path)
     props = root.find("ExtendedProperties")
     if props is None:
         return {}
 
+    # KBArticleID - format as KB{number} if present, else None
     kb_node = props.find("KBArticleID")
     kb_id = f"KB{kb_node.text}" if kb_node is not None and kb_node.text else None
 
+    # SecurityBulletinID - direct text content if present, else None
     bulletin_node = props.find("SecurityBulletinID")
     bulletin_id = bulletin_node.text if bulletin_node is not None else None
 
+    # CveIDs - list of all CveID node texts, can be empty if none present
     cve_ids = [node.text for node in props.findall("CveID") if node.text]
 
-    # productCode — normalized to lowercase
+    # productCode - normalized to lowercase
     product_code = None
     msi_node = root.find(".//MsiData")
     if msi_node is not None:
@@ -141,18 +164,20 @@ def get_x_data(revision_id):
         if raw:
             product_code = raw.lower()
 
-    # Handler — keep only the part after the last /
+    # Handler - keep only the part after the last /
     handler = None
     handler_raw = props.get("Handler")
     if handler_raw:
         handler = handler_raw.split("/")[-1]
 
+    # UpdateBehavior components
     install = props.find("InstallationBehavior")
     reboot_behavior        = install.get("RebootBehavior")             if install is not None else None
     can_request_user_input = install.get("CanRequestUserInput")        if install is not None else None
     impact                 = install.get("Impact")                     if install is not None else None
     requires_network       = install.get("RequiresNetworkConnectivity") if install is not None else None
 
+    # PatchingType - from File node, not UpdateBehavior, can be None
     patching_type = None
     file_node = root.find("Files/File")
     if file_node is not None:
@@ -161,6 +186,7 @@ def get_x_data(revision_id):
     uninstall = props.find("UninstallationBehavior")
     reboot_behavior_uninstall = uninstall.get("RebootBehavior") if uninstall is not None else None
 
+    # Return all extracted attributes from /x/ file
     return {
         "msr_severity":                props.get("MsrcSeverity"),
         "browse_only":                 props.get("BrowseOnly"),
@@ -178,7 +204,6 @@ def get_x_data(revision_id):
         "kb_article_id":               kb_id,
         "bulletin_id":                 bulletin_id,
         "cve_ids":                     cve_ids,
-        # UpdateBehavior components (combined with /c/ permanence and selfUpdate in export_csv)
         "handler":                     handler,
         "reboot_behavior":             reboot_behavior,
         "can_request_user_input":      can_request_user_input,
@@ -192,6 +217,8 @@ def get_x_data(revision_id):
 def get_l_data(revision_id):
     """Parse /l/en/<revision_id> and return all localized text fields.
     Also returns available language codes for the HAS_LANGUAGE relation."""
+
+    # handle missing /l/ file - not supposed to happen but just in case
     if not index.get(revision_id, {}).get("has_l"):
         return {}
 
@@ -199,6 +226,7 @@ def get_l_data(revision_id):
     if not path:
         return {}
 
+    # Correct the XML structure by wrapping in a root element to handle multiple top-level nodes
     root = _read_wrapped(path)
 
     title           = root.find(".//Title")
@@ -207,9 +235,10 @@ def get_l_data(revision_id):
     support_url     = root.find(".//SupportUrl")
     uninstall_notes = root.find(".//UninstallNotes")
 
-    # Languages pre-computed in build_index.py — avoids 136k × os.listdir() calls
+    # Languages pre-computed in build_index.py - avoids 136k × os.listdir() calls
     available_languages = index[revision_id].get("languages", [])
 
+    # Return all extracted attributes from /l/en/ file
     return {
         "title":               title.text           if title           is not None else None,
         "description":         description.text      if description     is not None else None,
@@ -224,6 +253,8 @@ def get_c_data(revision_id):
     """Parse /c/<revision_id> and return Properties, packageExtended and driver attributes.
     Also returns permanence (most restrictive across all package elements), selfUpdate,
     EulaID for HAS_EULA fallback, and AtLeastOne IsCategory entries for BELONGS_TO."""
+
+    # handle missing /c/ file - not supposed to happen but just in case
     if not index.get(revision_id, {}).get("has_c"):
         return {}
 
@@ -231,6 +262,7 @@ def get_c_data(revision_id):
     if not path:
         return {}
 
+    # Correct the XML structure by wrapping in a root element to handle multiple top-level nodes
     root = _read_wrapped(path)
 
     props = root.find("Properties")
@@ -238,6 +270,7 @@ def get_c_data(revision_id):
     explicitly_deployable = props.get("ExplicitlyDeployable") if props is not None else None
     eula_id               = props.get("EulaID")               if props is not None else None
 
+    # completelyOfflineCapable - from packageExtended node, can be None if node or attribute is missing
     completely_offline = None
     pkg_ext = root.find(f".//{{{_ASM_NS}}}packageExtended")
     if pkg_ext is None:
@@ -245,6 +278,7 @@ def get_c_data(revision_id):
     if pkg_ext is not None:
         completely_offline = pkg_ext.get("completelyOfflineCapable")
 
+    # inf - from driver node, can be None if node or attribute is missing
     inf = None
     driver_node = root.find(f".//{{{_ASM_NS}}}driver")
     if driver_node is None:
@@ -252,7 +286,7 @@ def get_c_data(revision_id):
     if driver_node is not None:
         inf = driver_node.get("inf")
 
-    # permanence — most restrictive value across all <package> elements
+    # permanence - most restrictive value across all <package> elements
     permanence_values = [
                             pkg.get("permanence")
                             for pkg in root.findall(f".//{{{_ASM_NS}}}package") + root.findall(".//package")
@@ -262,14 +296,14 @@ def get_c_data(revision_id):
 
     auto_select = props.get("AutoSelectOnWebSites") if props is not None else None
 
-    # selfUpdate — true when present on any <package> element
+    # selfUpdate - true when present on any <package> element
     self_update = None
     for pkg in root.findall(f".//{{{_ASM_NS}}}package") + root.findall(".//package"):
         if pkg.get("selfUpdate") is not None:
             self_update = pkg.get("selfUpdate")
             break
 
-    # AtLeastOne IsCategory="true" — category IDs for BELONGS_TO source:AtLeastOne
+    # AtLeastOne IsCategory="true" - category IDs for BELONGS_TO source:AtLeastOne
     at_least_one_categories = []
     for al in root.findall(".//AtLeastOne"):
         if al.get("IsCategory") == "true":
@@ -278,6 +312,7 @@ def get_c_data(revision_id):
                 if cat_id:
                     at_least_one_categories.append(cat_id)
 
+    # Return all extracted attributes from /c/ file
     return {
         "update_type":               update_type,
         "explicitly_deployable":     explicitly_deployable,
@@ -295,6 +330,8 @@ def get_e_data(revision_id):
     """Parse /e/<revision_id> and return all EulaFile entries as a list.
     digest is converted from base64 SHA1 to uppercase hex as primary key.
     sha256Digest comes from the AdditionalDigest child text (present on ~64.8%)."""
+
+    # handle missing /e/ file
     if not index.get(revision_id, {}).get("has_e"):
         return []
 
@@ -302,9 +339,11 @@ def get_e_data(revision_id):
     if not path:
         return []
 
+    # Correct the XML structure by wrapping in a root element to handle multiple top-level nodes
     root = _read_wrapped(path)
     eulas = []
 
+    # Extract EulaFile entries - digest is primary key, converted from base64 SHA1 to uppercase hex
     for eula_file in root.findall("EulaFile"):
         digest_b64 = eula_file.get("Digest")
         if not digest_b64:
@@ -325,10 +364,11 @@ def get_e_data(revision_id):
     return eulas
 
 
-def compute_behavior_id(handler, reboot_behavior, can_request_user_input, impact,
-                         requires_network, patching_type, reboot_behavior_uninstall,
-                         permanence, self_update):
+def compute_behavior_id(handler, reboot_behavior, can_request_user_input, impact, requires_network, patching_type, 
+                        reboot_behavior_uninstall,permanence, self_update):
+    
     """Compute a stable MD5 key for an UpdateBehavior node from its 9 attributes."""
+
     combo = "|".join([
         handler                   or "",
         reboot_behavior           or "",
@@ -342,7 +382,7 @@ def compute_behavior_id(handler, reboot_behavior, can_request_user_input, impact
     ])
     return hashlib.md5(combo.encode()).hexdigest()
 
-
+# Performance testing - parse all updates and measure time taken for different lengths
 if __name__ == "__main__":
     tree = ET.parse(PACKAGE_XML)
     root = tree.getroot()

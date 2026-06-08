@@ -6,35 +6,73 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+"""This script exports the parsed WSUS update data into CSV files, one per entity and relationship type.
+It uses multiprocessing to speed up the processing of updates, which is CPU-bound due to XML parsing and data extraction logic. 
+
+The main steps are:
+1. Load the list of updates from package.xml and the category registry.
+2. Split the updates into chunks and process each chunk in parallel workers.
+3. Each worker parses its assigned updates and extracts all relevant data into rows/dicts.
+4. The main process collects results from all workers, merges them, and writes the final CSV files to the output directory.
+
+The output CSV files include:
+- updates.csv: main update attributes
+- categories.csv: category details
+- kb_articles.csv: KB article IDs and bulletin IDs
+- cves.csv: CVE IDs
+- eulas.csv: EULA details
+- behaviors.csv: behavior details
+- languages.csv: language codes
+- rel_belongs_to.csv: update-category relationships
+- rel_has_kb.csv: update-KB article relationships
+- rel_fixes.csv: update-CVE relationships
+- rel_has_eula.csv: update-EULA relationships
+- rel_has_behavior.csv: update-behavior relationships
+- rel_has_language.csv: update-language relationships
+- rel_eula_language.csv: EULA-language relationships
+- rel_depends_on.csv: update prerequisite relationships
+- rel_bundled_by.csv: update bundle relationships
+- rel_superseded_by.csv: update supersedence relationships
+"""
+
+# Allow importing from parsing/ even when running this script directly
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
+# Import parsing functions and constants needed to extract all data for CSV export
 from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data, compute_behavior_id, index, NS, WSUS_DIR, PACKAGE_XML
 
 
 # CONFIGURATION
-OUTPUT_DIR  = "data/csv"
-SAMPLE_SIZE = None
-NUM_WORKERS = 6  # adjust to your CPU core count
+OUTPUT_DIR  = "data/csv" # output directory for CSV files
+SAMPLE_SIZE = None       # used for test, can be set to an integer to only process a subset of updates (e.g. 1000)
+                         # if set to 'None' -> process all updates
+NUM_WORKERS = 6          # adjust to your CPU core count
 
+# Warning for user about SAMPLE_SIZE setting, to avoid accidentally processing all updates when just testing
 if SAMPLE_SIZE is not None:
     print(f"/!\\ SAMPLE_SIZE is set to {SAMPLE_SIZE} -> only the first {SAMPLE_SIZE} updates will be exported.")
 else:
     print("/!\\ SAMPLE_SIZE is set to None -> all updates will be exported.")
     print("Press Ctrl+C to abort")
 
+# Create output directory if it doesn't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# Load category registry (needed to resolve category names for CSV export)
 if not os.path.exists("category_registry.json"):
     print("category_registry.json not found -> run explore_cat_names.py first")
     sys.exit(1)
 
+# Load category registry (needed to resolve category names for CSV export)
 with open("category_registry.json", encoding="utf-8") as f:
     category_registry = json.load(f)
 
+# Load updates from package.xml
 tree = ET.parse(PACKAGE_XML)
 root = tree.getroot()
 updates_node = root.find(f"{{{NS}}}Updates")
 updates = updates_node.findall(f"{{{NS}}}Update")
 
+# If SAMPLE_SIZE is set, only keep the first SAMPLE_SIZE updates for processing
 if SAMPLE_SIZE is not None:
     updates = updates[:SAMPLE_SIZE]
 
@@ -56,14 +94,11 @@ for u in updates:
 def process_chunk(chunk_data):
     """Process a chunk of (update_xml_string, category_id_to_type) and return all local rows/dicts.
     Workers receive serialized XML strings to avoid pickling ET elements."""
-    import xml.etree.ElementTree as ET
-    import os, sys, json
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
-    from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data, compute_behavior_id, NS
-
+    # Unpack chunk data
     xml_strings, category_id_to_type, cat_registry = chunk_data
 
+    # Local accumulators for this worker
     updates_rows           = []
     kb_articles            = {}
     cves                   = set()
@@ -82,6 +117,7 @@ def process_chunk(chunk_data):
     rel_has_language_rows  = []
     rel_eula_language_rows = []
 
+    # Process each update XML string in the chunk
     for xml_str in xml_strings:
         u    = ET.fromstring(xml_str)
         data = parse_update(u)
@@ -91,6 +127,7 @@ def process_chunk(chunk_data):
         c    = get_c_data(rid)
         eula_list = get_e_data(rid)
 
+        # Extract main update attributes and add to updates_rows
         updates_rows.append({
             "revision_id":                 rid,
             "update_id":                   data["update_id"],
@@ -125,10 +162,12 @@ def process_chunk(chunk_data):
             "auto_select_on_websites":     c.get("auto_select_on_websites"),
         })
 
+        # Extract languages and update rel_has_language_rows
         for lang_code in l.get("available_languages", []):
             languages.add(lang_code)
             rel_has_language_rows.append({"revision_id": rid, "language_code": lang_code})
 
+        # Extract prerequisites and update rel_depends_on_rows
         for prereq in data.get("prerequisites", []):
             rel_depends_on_rows.append({
                 "source_revision_id": rid,
@@ -136,22 +175,27 @@ def process_chunk(chunk_data):
                 "is_or":              prereq["is_or"],
             })
 
+        # Extract bundle relationships and update rel_bundled_by_rows
         for bundle_id in data.get("bundled_by", []):
             rel_bundled_by_rows.append({"revision_id": rid, "bundle_update_id": bundle_id})
 
+        # Extract supersedence relationships and update rel_superseded_by_rows
         for sup_id in data.get("superseded_by", []):
             rel_superseded_by_rows.append({"revision_id": rid, "superseding_update_id": sup_id})
 
+        # Extract KB article relationships and update rel_has_kb_rows
         kb_id = x.get("kb_article_id")
         if kb_id:
             if kb_id not in kb_articles or x.get("bulletin_id"):
                 kb_articles[kb_id] = x.get("bulletin_id")
             rel_has_kb_rows.append({"revision_id": rid, "kb_article_id": kb_id})
 
+        # Extract CVE relationships and update rel_fixes_rows   
         for cve_id in x.get("cve_ids", []):
             cves.add(cve_id)
             rel_fixes_rows.append({"revision_id": rid, "cve_id": cve_id})
 
+        # Extract EULA relationships and update rel_has_eula_rows and rel_eula_language_rows
         requires_reacceptance = x.get("requires_reacceptance")
         for eula in eula_list:
             digest = eula["digest"]
@@ -173,6 +217,8 @@ def process_chunk(chunk_data):
             x.get("impact"), x.get("requires_network_connectivity"), x.get("patching_type"),
             x.get("reboot_behavior_uninstall"), permanence, self_update
         )
+
+        # Extract behavior and update rel_has_behavior_rows
         if behavior_id not in behaviors:
             behaviors[behavior_id] = {
                 "behavior_id":                   behavior_id,
@@ -188,6 +234,7 @@ def process_chunk(chunk_data):
             }
         rel_has_behavior_rows.append({"revision_id": rid, "behavior_id": behavior_id})
 
+        # Extract categories and update rel_belongs_to_rows
         update_cats = {cat["type"]: cat for cat in data.get("categories", [])}
         company_cat  = update_cats.get("Company")
         family_cat   = update_cats.get("ProductFamily")
@@ -224,6 +271,7 @@ def process_chunk(chunk_data):
             for cat_id in c.get("at_least_one_categories", []):
                 rel_belongs_to_rows.append({"revision_id": rid, "category_key": cat_id, "complete": False})
 
+    # End of processing for this chunk, return all local accumulators
     return {
         "updates_rows":           updates_rows,
         "kb_articles":            kb_articles,
@@ -247,6 +295,7 @@ def process_chunk(chunk_data):
 
 def chunk_updates(updates, n_chunks):
     """Split updates list into n_chunks roughly equal parts, serialized as XML strings."""
+
     size = len(updates)
     chunk_size = (size + n_chunks - 1) // n_chunks
     chunks = []
@@ -258,6 +307,7 @@ def chunk_updates(updates, n_chunks):
 
 def merge_results(results):
     """Merge all worker results into unified accumulators."""
+
     updates_rows           = []
     kb_articles            = {}
     cves                   = set()
@@ -317,14 +367,16 @@ def merge_results(results):
 
 
 def write_csv(filename, rows, fieldnames):
+    """Write a list of dicts to a CSV file with the given fieldnames."""
+    
     path = os.path.join(OUTPUT_DIR, filename)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  {filename} — {len(rows)} rows")
+    print(f"  {filename} - {len(rows)} rows")
 
-
+# Main execution
 if __name__ == "__main__":
     start_total = time.time()
 

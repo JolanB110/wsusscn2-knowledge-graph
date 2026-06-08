@@ -63,7 +63,7 @@ for u in updates:
     c         = get_c_data(rid)
     eula_list = get_e_data(rid)
 
-    # Categories — inlined as pipe-separated values
+    # Categories - inlined as pipe-separated values
     update_cats = {cat["type"]: cat for cat in data.get("categories", [])}
     def _name(cat):
         return category_registry.get(cat["id"], {}).get("name") if cat else None
@@ -84,7 +84,7 @@ for u in updates:
         x.get("reboot_behavior_uninstall"), permanence, self_update
     )
 
-    # EULAs — pipe-separated digests
+    # EULAs - pipe-separated digests
     eula_digests = [e["digest"] for e in eula_list]
 
     rows.append({
@@ -120,7 +120,7 @@ for u in updates:
         "explicitly_deployable":       c.get("explicitly_deployable"),
         "completely_offline_capable":  c.get("completely_offline_capable"),
         "inf":                         c.get("inf"),
-        # Relations — inlined as pipe-separated IDs
+        # Relations - inlined as pipe-separated IDs
         "languages":           "|".join(data.get("languages", [])),
         "prerequisite_ids":    "|".join([p["id"] for p in data.get("prerequisites", []) if not p["is_or"]]),
         "prerequisite_or_ids": "|".join([p["id"] for p in data.get("prerequisites", []) if p["is_or"]]),
@@ -132,7 +132,7 @@ for u in updates:
         "eula_digests":        "|".join(eula_digests),
         "requires_reacceptance": x.get("requires_reacceptance"),
         "behavior_id":         behavior_id,
-        # Category — inlined
+        # Category - inlined
         "company":                  _name(company_cat),
         "company_id":               _id(company_cat),
         "product_family":           _name(family_cat),
@@ -171,5 +171,5 @@ with open(path, "w", newline="", encoding="utf-8") as f:
     writer.writeheader()
     writer.writerows(rows)
 
-print(f"  {OUTPUT_FILE} — {len(rows)} rows")
+print(f"  {OUTPUT_FILE} - {len(rows)} rows")
 print("Done.")

@@ -32,9 +32,29 @@ def find_neo4j_dbms():
 
 
 
-def select_dbms_choice():
-    """Detect Neo4j Desktop installations and prompt the user to select one as the active database."""
+def _read_bolt_port(conf_dir: str) -> int:
+    """Read the Bolt port from neo4j.conf, fallback to 7687."""
 
+    conf_path = os.path.join(conf_dir, "conf", "neo4j.conf")
+    if not os.path.exists(conf_path):
+        return 7687
+    with open(conf_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() == "server.bolt.listen_address":
+                try:
+                    return int(value.strip().rsplit(":", 1)[-1])
+                except ValueError:
+                    return 7687
+    return 7687
+
+
+def select_dbms_choice():
+    """Prompt the user to select a Neo4j Desktop database and provide the Bolt URI."""
+    
     dbms_list = find_neo4j_dbms()
     if not dbms_list:
         print("No Neo4j database detected.")
@@ -50,15 +70,16 @@ def select_dbms_choice():
         print("Invalid choice.")
         return None
 
-    # Bolt URI — default 7687, user can override
-    bolt_input = input("Bolt URI [bolt://127.0.0.1:7687] : ").strip()
-    dbms["bolt_uri"] = bolt_input if bolt_input else "bolt://127.0.0.1:7687"
+    detected_port = _read_bolt_port(dbms["path"])
+    default_uri = f"neo4j://127.0.0.1:{detected_port}"
+    bolt_input = input(f"Bolt URI (Enter to use {default_uri}) : ").strip()
+    dbms["bolt_uri"] = bolt_input if bolt_input else default_uri
 
     return dbms
 
 
 def verify_connection(bolt_uri: str, password: str) -> bool:
-    """Vérifie que Neo4j est accessible sur bolt://127.0.0.1:7687."""
+    """Verify that Neo4j is reachable at the given Bolt URI."""
 
     try:
         driver = GraphDatabase.driver(bolt_uri, auth=("neo4j", password))

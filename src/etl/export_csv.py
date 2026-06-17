@@ -5,9 +5,10 @@ import csv
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from parser import index, NS, WSUS_DIR, PACKAGE_XML
 
 """This script exports the parsed WSUS update data into CSV files, one per entity and relationship type.
-It uses multiprocessing to speed up the processing of updates, which is CPU-bound due to XML parsing and data extraction logic. 
+It uses multiprocessing to speed up the processing of updates, which is CPU-bound due to XML parsing and data extraction logic.
 
 The main steps are:
 1. Load the list of updates from package.xml and the category registry.
@@ -37,68 +38,23 @@ The output CSV files include:
 
 # Allow importing from parsing/ even when running this script directly
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
-# Import parsing functions and constants needed to extract all data for CSV export
-from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data, compute_behavior_id, index, NS, WSUS_DIR, PACKAGE_XML
-
 
 # CONFIGURATION
-OUTPUT_DIR  = "data/csv" # output directory for CSV files
-SAMPLE_SIZE = None       # used for test, can be set to an integer to only process a subset of updates (e.g. 1000)
-                         # if set to 'None' -> process all updates
-NUM_WORKERS = 6          # adjust to your CPU core count
-
-# Warning for user about SAMPLE_SIZE setting, to avoid accidentally processing all updates when just testing
-if SAMPLE_SIZE is not None:
-    print(f"/!\\ SAMPLE_SIZE is set to {SAMPLE_SIZE} -> only the first {SAMPLE_SIZE} updates will be exported.")
-else:
-    print("/!\\ SAMPLE_SIZE is set to None -> all updates will be exported.")
-    print("Press Ctrl+C to abort")
-
-# Create output directory if it doesn't exist
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Load category registry (needed to resolve category names for CSV export)
-if not os.path.exists("category_registry.json"):
-    print("category_registry.json not found -> run explore_cat_names.py first")
-    sys.exit(1)
-
-# Load category registry (needed to resolve category names for CSV export)
-with open("category_registry.json", encoding="utf-8") as f:
-    category_registry = json.load(f)
-
-# Load updates from package.xml
-tree = ET.parse(PACKAGE_XML)
-root = tree.getroot()
-updates_node = root.find(f"{{{NS}}}Updates")
-updates = updates_node.findall(f"{{{NS}}}Update")
-
-# If SAMPLE_SIZE is set, only keep the first SAMPLE_SIZE updates for processing
-if SAMPLE_SIZE is not None:
-    updates = updates[:SAMPLE_SIZE]
-
-print(f"Exporting {len(updates)} updates to CSV...")
-
-# First pass: collect category_id -> type mapping (needed by workers)
-category_id_to_type = {}
-for u in updates:
-    cats_node = u.find(f"{{{NS}}}Categories")
-    if cats_node is None:
-        continue
-    for cat in cats_node.findall(f"{{{NS}}}Category"):
-        cid  = cat.get("Id")
-        ctype = cat.get("Type")
-        if cid and ctype:
-            category_id_to_type[cid] = ctype
+OUTPUT_DIR  = "data/csv"
+SAMPLE_SIZE = None
+NUM_WORKERS = 6
 
 
 def process_chunk(chunk_data):
     """Process a chunk of (update_xml_string, category_id_to_type) and return all local rows/dicts.
     Workers receive serialized XML strings to avoid pickling ET elements."""
 
-    # Unpack chunk data
+    import os, sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "parsing"))
+    from parser import parse_update, get_x_data, get_l_data, get_c_data, get_e_data, compute_behavior_id
+
     xml_strings, category_id_to_type, cat_registry = chunk_data
 
-    # Local accumulators for this worker
     updates_rows           = []
     kb_articles            = {}
     cves                   = set()
@@ -117,7 +73,6 @@ def process_chunk(chunk_data):
     rel_has_language_rows  = []
     rel_eula_language_rows = []
 
-    # Process each update XML string in the chunk
     for xml_str in xml_strings:
         u    = ET.fromstring(xml_str)
         data = parse_update(u)
@@ -127,7 +82,6 @@ def process_chunk(chunk_data):
         c    = get_c_data(rid)
         eula_list = get_e_data(rid)
 
-        # Extract main update attributes and add to updates_rows
         updates_rows.append({
             "revision_id":                 rid,
             "update_id":                   data["update_id"],
@@ -162,12 +116,10 @@ def process_chunk(chunk_data):
             "auto_select_on_websites":     c.get("auto_select_on_websites"),
         })
 
-        # Extract languages and update rel_has_language_rows
         for lang_code in l.get("available_languages", []):
             languages.add(lang_code)
             rel_has_language_rows.append({"revision_id": rid, "language_code": lang_code})
 
-        # Extract prerequisites and update rel_depends_on_rows
         for prereq in data.get("prerequisites", []):
             rel_depends_on_rows.append({
                 "source_revision_id": rid,
@@ -175,27 +127,22 @@ def process_chunk(chunk_data):
                 "is_or":              prereq["is_or"],
             })
 
-        # Extract bundle relationships and update rel_bundled_by_rows
         for bundle_id in data.get("bundled_by", []):
             rel_bundled_by_rows.append({"revision_id": rid, "bundle_update_id": bundle_id})
 
-        # Extract supersedence relationships and update rel_superseded_by_rows
         for sup_id in data.get("superseded_by", []):
             rel_superseded_by_rows.append({"revision_id": rid, "superseding_update_id": sup_id})
 
-        # Extract KB article relationships and update rel_has_kb_rows
         kb_id = x.get("kb_article_id")
         if kb_id:
             if kb_id not in kb_articles or x.get("bulletin_id"):
                 kb_articles[kb_id] = x.get("bulletin_id")
             rel_has_kb_rows.append({"revision_id": rid, "kb_article_id": kb_id})
 
-        # Extract CVE relationships and update rel_fixes_rows   
         for cve_id in x.get("cve_ids", []):
             cves.add(cve_id)
             rel_fixes_rows.append({"revision_id": rid, "cve_id": cve_id})
 
-        # Extract EULA relationships and update rel_has_eula_rows and rel_eula_language_rows
         requires_reacceptance = x.get("requires_reacceptance")
         for eula in eula_list:
             digest = eula["digest"]
@@ -217,8 +164,6 @@ def process_chunk(chunk_data):
             x.get("impact"), x.get("requires_network_connectivity"), x.get("patching_type"),
             x.get("reboot_behavior_uninstall"), permanence, self_update
         )
-
-        # Extract behavior and update rel_has_behavior_rows
         if behavior_id not in behaviors:
             behaviors[behavior_id] = {
                 "behavior_id":                   behavior_id,
@@ -234,7 +179,6 @@ def process_chunk(chunk_data):
             }
         rel_has_behavior_rows.append({"revision_id": rid, "behavior_id": behavior_id})
 
-        # Extract categories and update rel_belongs_to_rows
         update_cats = {cat["type"]: cat for cat in data.get("categories", [])}
         company_cat  = update_cats.get("Company")
         family_cat   = update_cats.get("ProductFamily")
@@ -271,7 +215,6 @@ def process_chunk(chunk_data):
             for cat_id in c.get("at_least_one_categories", []):
                 rel_belongs_to_rows.append({"revision_id": rid, "category_key": cat_id, "complete": False})
 
-    # End of processing for this chunk, return all local accumulators
     return {
         "updates_rows":           updates_rows,
         "kb_articles":            kb_articles,
@@ -293,7 +236,7 @@ def process_chunk(chunk_data):
     }
 
 
-def chunk_updates(updates, n_chunks):
+def chunk_updates(updates, category_id_to_type, category_registry, n_chunks):
     """Split updates list into n_chunks roughly equal parts, serialized as XML strings."""
 
     size = len(updates)
@@ -366,38 +309,71 @@ def merge_results(results):
     }
 
 
-def write_csv(filename, rows, fieldnames):
+def write_csv(output_dir, filename, rows, fieldnames):
     """Write a list of dicts to a CSV file with the given fieldnames."""
-    
-    path = os.path.join(OUTPUT_DIR, filename)
+
+    path = os.path.join(output_dir, filename)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     print(f"  {filename} - {len(rows)} rows")
 
-# Main execution
-if __name__ == "__main__":
-    start_total = time.time()
 
-    chunks = chunk_updates(updates, NUM_WORKERS)
-    print(f"Split into {len(chunks)} chunks of ~{len(chunks[0][0])} updates each")
+def run_export(output_dir=OUTPUT_DIR, sample_size=SAMPLE_SIZE, num_workers=NUM_WORKERS):
+    """Main export function - callable from main.py.
+    All side effects (prints, file I/O) are contained here, not at module level."""
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if not os.path.exists("category_registry.json"):
+        print("category_registry.json not found -> run explore_cat_names.py first")
+        sys.exit(1)
+
+    with open("category_registry.json", encoding="utf-8") as f:
+        category_registry = json.load(f)
+
+    tree = ET.parse(PACKAGE_XML)
+    root = tree.getroot()
+    updates_node = root.find(f"{{{NS}}}Updates")
+    updates = updates_node.findall(f"{{{NS}}}Update")
+
+    if sample_size is not None:
+        updates = updates[:sample_size]
+        print(f"  /!\\ SAMPLE_SIZE = {sample_size}")
+
+    print(f"  Exporting {len(updates)} updates ({num_workers} workers)...")
+
+    category_id_to_type = {}
+    for u in updates:
+        cats_node = u.find(f"{{{NS}}}Categories")
+        if cats_node is None:
+            continue
+        for cat in cats_node.findall(f"{{{NS}}}Category"):
+            cid   = cat.get("Id")
+            ctype = cat.get("Type")
+            if cid and ctype:
+                category_id_to_type[cid] = ctype
+
+    chunks = chunk_updates(updates, category_id_to_type, category_registry, num_workers)
+    n_chunks = len(chunks)
+    print(f"  Split into {n_chunks} chunks of ~{len(chunks[0][0])} updates each")
 
     results = []
-    with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = {executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)}
-        chunks.clear()  # libère la RAM des chunks sérialisés
+        chunks.clear()
         for future in as_completed(futures):
             i = futures[future]
             result = future.result()
             results.append(result)
-            print(f"  chunk {i+1}/{len(chunks)} done ({len(result['updates_rows'])} updates)")
+            print(f"  chunk {i+1}/{n_chunks} done ({len(result['updates_rows'])} updates)")
 
-    print("Merging results...")
+    print("  Merging results...")
     merged = merge_results(results)
 
-    print("Writing CSVs...")
-    write_csv("updates.csv", merged["updates_rows"], [
+    print("  Writing CSVs...")
+    write_csv(output_dir, "updates.csv", merged["updates_rows"], [
         "revision_id", "update_id", "revision_number", "creation_date",
         "default_language", "is_leaf", "is_bundle", "is_software", "deployment_action",
         "title", "description", "more_info_url", "support_url", "uninstall_notes",
@@ -406,39 +382,43 @@ if __name__ == "__main__":
         "recommended_memory", "recommended_cpu_speed", "can_source_be_required", "product_code",
         "update_type", "explicitly_deployable", "completely_offline_capable", "inf", "auto_select_on_websites",
     ])
-    write_csv("categories.csv", list(merged["categories"].values()), [
+    write_csv(output_dir, "categories.csv", list(merged["categories"].values()), [
         "category_key", "company", "company_id", "product_family", "product_family_id",
         "product", "product_id", "update_classification", "update_classification_id",
     ])
-    write_csv("kb_articles.csv",
+    write_csv(output_dir, "kb_articles.csv",
         [{"kb_article_id": k, "bulletin_id": v} for k, v in merged["kb_articles"].items()],
         ["kb_article_id", "bulletin_id"]
     )
-    write_csv("cves.csv",
+    write_csv(output_dir, "cves.csv",
         [{"cve_id": cve} for cve in sorted(merged["cves"])],
         ["cve_id"]
     )
-    write_csv("eulas.csv", list(merged["eulas"].values()), [
+    write_csv(output_dir, "eulas.csv", list(merged["eulas"].values()), [
         "digest", "file_name", "size", "language", "sha256_digest",
     ])
-    write_csv("behaviors.csv", list(merged["behaviors"].values()), [
+    write_csv(output_dir, "behaviors.csv", list(merged["behaviors"].values()), [
         "behavior_id", "handler", "reboot_behavior", "can_request_user_input", "impact",
         "requires_network_connectivity", "patching_type", "reboot_behavior_uninstall",
         "permanence", "self_update",
     ])
-    write_csv("languages.csv",
+    write_csv(output_dir, "languages.csv",
         [{"language_code": lang} for lang in sorted(merged["languages"])],
         ["language_code"]
     )
-    write_csv("rel_belongs_to.csv",    merged["rel_belongs_to_rows"],    ["revision_id", "category_key", "complete"])
-    write_csv("rel_has_kb.csv",        merged["rel_has_kb_rows"],        ["revision_id", "kb_article_id"])
-    write_csv("rel_fixes.csv",         merged["rel_fixes_rows"],         ["revision_id", "cve_id"])
-    write_csv("rel_has_eula.csv",      merged["rel_has_eula_rows"],      ["revision_id", "digest", "requires_reacceptance"])
-    write_csv("rel_has_behavior.csv",  merged["rel_has_behavior_rows"],  ["revision_id", "behavior_id"])
-    write_csv("rel_has_language.csv",  merged["rel_has_language_rows"],  ["revision_id", "language_code"])
-    write_csv("rel_eula_language.csv", merged["rel_eula_language_rows"], ["digest", "language_code"])
-    write_csv("rel_depends_on.csv",    merged["rel_depends_on_rows"],    ["source_revision_id", "target_update_id", "is_or"])
-    write_csv("rel_bundled_by.csv",    merged["rel_bundled_by_rows"],    ["revision_id", "bundle_update_id"])
-    write_csv("rel_superseded_by.csv", merged["rel_superseded_by_rows"], ["revision_id", "superseding_update_id"])
+    write_csv(output_dir, "rel_belongs_to.csv",    merged["rel_belongs_to_rows"],    ["revision_id", "category_key", "complete"])
+    write_csv(output_dir, "rel_has_kb.csv",        merged["rel_has_kb_rows"],        ["revision_id", "kb_article_id"])
+    write_csv(output_dir, "rel_fixes.csv",         merged["rel_fixes_rows"],         ["revision_id", "cve_id"])
+    write_csv(output_dir, "rel_has_eula.csv",      merged["rel_has_eula_rows"],      ["revision_id", "digest", "requires_reacceptance"])
+    write_csv(output_dir, "rel_has_behavior.csv",  merged["rel_has_behavior_rows"],  ["revision_id", "behavior_id"])
+    write_csv(output_dir, "rel_has_language.csv",  merged["rel_has_language_rows"],  ["revision_id", "language_code"])
+    write_csv(output_dir, "rel_eula_language.csv", merged["rel_eula_language_rows"], ["digest", "language_code"])
+    write_csv(output_dir, "rel_depends_on.csv",    merged["rel_depends_on_rows"],    ["source_revision_id", "target_update_id", "is_or"])
+    write_csv(output_dir, "rel_bundled_by.csv",    merged["rel_bundled_by_rows"],    ["revision_id", "bundle_update_id"])
+    write_csv(output_dir, "rel_superseded_by.csv", merged["rel_superseded_by_rows"], ["revision_id", "superseding_update_id"])
 
-    print(f"Done. Total: {time.time() - start_total:.2f}s")
+
+if __name__ == "__main__":
+    start = time.time()
+    run_export()
+    print(f"Done. Total: {time.time() - start:.2f}s")

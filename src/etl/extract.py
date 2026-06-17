@@ -46,7 +46,7 @@ def extract_package(cab_name):
     return cab_name, result.returncode
 
 
-def extract_packages():
+def extract_packages(num_workers=MAX_WORKERS):
     """Extract all package*.cab files in parallel, which contain the actual update metadata and files."""
 
     cabs = sorted([
@@ -54,12 +54,12 @@ def extract_packages():
         if f.startswith("package") and f.endswith(".cab") and f != "package.cab"
     ])
     total = len(cabs)
-    print(f"Extraction of {total} packages ({MAX_WORKERS} Working)...")
+    print(f"Extraction of {total} packages ({num_workers} workers)...")
 
     done = 0
     errors = []
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = {executor.submit(extract_package, cab): cab for cab in cabs}
         for future in as_completed(futures):
             cab_name, code = future.result()
@@ -76,10 +76,10 @@ def extract_packages():
         print("All package extracted with success.")
 
 
-def extract_all():
+def extract_all(num_workers=MAX_WORKERS):
     extract_main_cab()
     extract_package_xml()
-    extract_packages()
+    extract_packages(num_workers=num_workers)
 
 
 if __name__ == "__main__":

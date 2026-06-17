@@ -16,7 +16,7 @@ def run(session, query, description=""):
     print(f"  ✓ {description} ({duration:.1f}s)")
 
 
-def import_graph(uri, password, csv_dir, import_dir):
+def import_graph(uri, password, csv_dir, import_dir, new_version=False):
     """Import the knowledge graph into Neo4j. It copies the extracted CSVs into Neo4j's import directory, then runs a series 
     of Cypher queries to create the graph's nodes and relationships from the CSVs."""
 
@@ -24,9 +24,22 @@ def import_graph(uri, password, csv_dir, import_dir):
     for f in os.listdir(csv_dir):
         if f.endswith(".csv"):
             shutil.copy(os.path.join(csv_dir, f), import_dir)
-            print(f"  Copié : {f}")
+            print(f"  Copied : {f}")
 
     driver = GraphDatabase.driver(uri, auth=("neo4j", password))
+
+    # Wipe the database before import if a new catalog version is detected - avoids residual data from previous imports
+    if new_version:
+        print("\n=== Database wipe (new catalog version detected) ===")
+        choix = input("  Delete all existing data? (recommended to avoid potential residual data from the previous version) (y/n) : ").strip().lower()
+        if choix == "y":
+            print("  Deleting...")
+            t = time.time()
+            with driver.session(database="system") as sys_session:
+                sys_session.run("CREATE OR REPLACE DATABASE neo4j WAIT")
+            print(f"  Database deleted and recreated ({time.time() - t:.1f}s)")
+        else:
+            print("  Wipe skipped - residual data from previous version may remain.")
 
     with driver.session() as session:
 
@@ -259,14 +272,14 @@ def import_graph(uri, password, csv_dir, import_dir):
         print("\n=== Phase 4/4 - Verification ===")
 
         result = session.run("MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC")
-        print("\nNoeuds :")
+        print("\nNodes :")
         for r in result:
             print(f"  {r['label']}: {r['count']}")
 
         result = session.run("MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS count ORDER BY count DESC")
-        print("\nRelations :")
+        print("\nRelationships :")
         for r in result:
             print(f"  {r['type']}: {r['count']}")
 
     driver.close()
-    print("\nImport finished.")
+    print("\nImport complete.")

@@ -74,8 +74,7 @@ def main():
     else:
         print("No local version detected.")
 
-    print(f"\nFile size : ~{size_mb} MB")
-    print(f"Estimated duration : ~{round(size_mb / 100)} min (100 Mb/s) / ~{round(size_mb / 10)} min (10 Mb/s)\n")
+    print(f"\nFile size : ~{size_mb} MB\n")
 
     choix = input("Download the new version ? (o/n) : ").strip().lower()
     if choix != "o":
